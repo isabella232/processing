@@ -231,12 +231,89 @@ public class JavaBuild {
       javaLibraryPath = "";
     }
 
-    // 1. concatenate all .pde files to the 'main' pde
-    //    store line number for starting point of each code bit
+/********* Code added to include support for Include folder *********/
+
+	//Most of this code is taken from SketchCode.java.load()
+	//need to look into reusing that if possible.
+
+	String includesPath = Preferences.get("preproc.includes_path");
+	
+	//this is inefficient since sketch.getCode might be called twice.
+	//would be easier if this was an ArrayList
+	SketchCode[] arr = sketch.getCode();
+	
+	if(includesPath != null) {
+		
+		File f = new File(includesPath);
+		
+		if(f.exists() && f.isDirectory()) {
+			
+			//get the include folder. (Need to change this to pull from preferences)
+			//if preference doesnt exist dont do all of this
+			File includeFolder = new File(includesPath);
+
+			//list of files / folder names in list.
+		    String includesList[] = includeFolder.list();
+
+			//array to hold sketches / PDE / Java files in the folder
+		    SketchCode[] includes = new SketchCode[includesList.length];
+
+			int codeCount = 0;
+
+			//This is hardcoded since 
+		    //String[] extensions = {"pde", "java"};//note hardcoding this
+			 String[] extensions = mode.getExtensions();
+
+			//loop through the file names
+		    for (String filename : includesList) {
+		      // Ignoring the dot prefix files is especially important to avoid files
+		      // with the ._ prefix on Mac OS X. (You'll see this with Mac files on
+		      // non-HFS drives, i.e. a thumb drive formatted FAT32.)
+		      if (filename.startsWith(".")) continue;
+
+		      // Don't let some wacko name a directory blah.pde or bling.java.
+		      if (new File(includeFolder, filename).isDirectory()) continue;
+
+		      // figure out the name without any extension
+		      String base = filename;
+		      // now strip off the .pde and .java extensions
+		      for (String extension : extensions) {
+		        if (base.toLowerCase().endsWith("." + extension)) {
+		          base = base.substring(0, base.length() - (extension.length() + 1));
+
+		          // Don't allow people to use files with invalid names, since on load,
+		          // it would be otherwise possible to sneak in nasty filenames. [0116]
+		          if (Sketch.isSanitaryName(base)) {
+		            includes[codeCount++] =
+		              new SketchCode(new File(includeFolder, filename), extension);
+		          }
+		        }
+		      }
+		    }
+		    // Remove any code that wasn't proper
+		    includes = (SketchCode[]) PApplet.subset(includes, 0, codeCount);
+
+			//get the Sketch files from the main file's directory
+			SketchCode[] _tmp = sketch.getCode();
+
+			//create a new arr to combine the sketch files and include files
+			arr = new SketchCode[includes.length + _tmp.length];
+
+			//concatenate both arrays together
+			System.arraycopy(_tmp, 0, arr, 0, _tmp.length);
+			System.arraycopy(includes, 0, arr, _tmp.length, includes.length);	
+		}
+	}
+
+/******************/
 
     StringBuffer bigCode = new StringBuffer();
     int bigCount = 0;
-    for (SketchCode sc : sketch.getCode()) {
+
+
+	//Combine all of the sketch files, from the main folder
+	//and include folders
+    for (SketchCode sc : arr) {
       if (sc.isExtension("pde")) {
         sc.setPreprocOffset(bigCount);
         bigCode.append(sc.getProgram());
