@@ -233,77 +233,102 @@ public class JavaBuild {
 
 /********* Code added to include support for Include folder *********/
 
-	//Most of this code is taken from SketchCode.java.load()
-	//need to look into reusing that if possible.
 
-	String includesPath = Preferences.get("preproc.includes_path");
-	
-	//this is inefficient since sketch.getCode might be called twice.
-	//would be easier if this was an ArrayList
-	SketchCode[] arr = sketch.getCode();
-	
-	if(includesPath != null) {
-		
-		File f = new File(includesPath);
-		
-		if(f.exists() && f.isDirectory()) {
-			
-			//get the include folder. (Need to change this to pull from preferences)
-			//if preference doesnt exist dont do all of this
-			File includeFolder = new File(includesPath);
+    //to test
+    //#include ../includes/Point.pde
 
-			//list of files / folder names in list.
-		    String includesList[] = includeFolder.list();
+    SketchCode[] arr = sketch.getCode();
 
-			//array to hold sketches / PDE / Java files in the folder
-		    SketchCode[] includes = new SketchCode[includesList.length];
+    ArrayList<SketchCode> includes = new ArrayList<SketchCode>(Arrays.asList(sketch.getCode()));
+    HashMap<String, Boolean> foundPaths = new HashMap<String, Boolean>();
 
-			int codeCount = 0;
+    String INCLUDE_TOKEN = "#include ";
 
-			//This is hardcoded since 
-		    //String[] extensions = {"pde", "java"};//note hardcoding this
-			 String[] extensions = mode.getExtensions();
+    String[] extensions = mode.getExtensions();
 
-			//loop through the file names
-		    for (String filename : includesList) {
-		      // Ignoring the dot prefix files is especially important to avoid files
-		      // with the ._ prefix on Mac OS X. (You'll see this with Mac files on
-		      // non-HFS drives, i.e. a thumb drive formatted FAT32.)
-		      if (filename.startsWith(".")) continue;
 
-		      // Don't let some wacko name a directory blah.pde or bling.java.
-		      if (new File(includeFolder, filename).isDirectory()) continue;
+    System.out.println("----------------");
 
-		      // figure out the name without any extension
-		      String base = filename;
-		      // now strip off the .pde and .java extensions
-		      for (String extension : extensions) {
-		        if (base.toLowerCase().endsWith("." + extension)) {
-		          base = base.substring(0, base.length() - (extension.length() + 1));
+    int len = arr.length;
+    for(int i = 0; i < len; i++) {
+      SketchCode sk = arr[i];
 
-		          // Don't allow people to use files with invalid names, since on load,
-		          // it would be otherwise possible to sneak in nasty filenames. [0116]
-		          if (Sketch.isSanitaryName(base)) {
-		            includes[codeCount++] =
-		              new SketchCode(new File(includeFolder, filename), extension);
-		          }
-		        }
-		      }
-		    }
-		    // Remove any code that wasn't proper
-		    includes = (SketchCode[]) PApplet.subset(includes, 0, codeCount);
+      String program = sk.getProgram();
+      Scanner s = new Scanner(program);
 
-			//get the Sketch files from the main file's directory
-			SketchCode[] _tmp = sketch.getCode();
+      String tmp;
+      while(s.hasNextLine()) {
+        tmp = s.nextLine();
 
-			//create a new arr to combine the sketch files and include files
-			arr = new SketchCode[includes.length + _tmp.length];
+        //probably better to use a regex
+        if(tmp.startsWith(INCLUDE_TOKEN)) {
+          String path = tmp.substring(INCLUDE_TOKEN.length()).trim();
 
-			//concatenate both arrays together
-			System.arraycopy(_tmp, 0, arr, 0, _tmp.length);
-			System.arraycopy(includes, 0, arr, _tmp.length, includes.length);	
-		}
-	}
+          System.out.println("found include : " + path);
+
+          File f = new File(sketch.getFolder(), path);
+
+          try {
+            f = f.getCanonicalFile();
+          } catch(Exception e) {
+            System.out.println("found include : " + e.getMessage());
+            continue;
+          }
+          System.out.println("absolute path : " + f.getAbsolutePath());
+
+          if(!f.exists() || f.isDirectory()) {
+            System.out.println("file doesnt exist");
+            continue;
+          }
+
+          if((sketch.getFolder().getAbsolutePath() == f.getParentFile().getAbsolutePath())) {
+            System.out.println("file is in root folder");
+            continue;
+          }
+
+          //check if we have already included the file
+
+          Boolean found = foundPaths.get(f.getAbsolutePath());
+          if(found != null && found) {
+            System.out.println("already included file");
+            continue;
+          }
+
+          String filename = f.getName();
+
+          System.out.println("filename : " + filename);
+
+          // Ignoring the dot prefix files is especially important to avoid files
+          // with the ._ prefix on Mac OS X. (You'll see this with Mac files on
+          // non-HFS drives, i.e. a thumb drive formatted FAT32.)
+          if (filename.startsWith(".")) continue;
+
+          String base = filename;
+
+          // now strip off the .pde and .java extensions
+          for (String extension : extensions) {
+            if (base.toLowerCase().endsWith("." + extension)) {
+              base = base.substring(0, base.length() - (extension.length() + 1));
+
+              // Don't allow people to use files with invalid names, since on load,
+              // it would be otherwise possible to sneak in nasty filenames. [0116]
+              if (Sketch.isSanitaryName(base)) {
+
+                  System.out.println("adding path to found paths : " + f.getAbsolutePath());
+                  foundPaths.put(f.getAbsolutePath(), true);
+
+                  System.out.println("creating new sketch code : " + (new File(f.getParentFile(), filename)).getAbsolutePath());
+
+                  includes.add(new SketchCode(new File(f.getParentFile(), filename), extension));
+              }
+            }
+          }
+        }
+      }
+    }
+     
+    arr = includes.toArray(new SketchCode[includes.size()]);
+
 
 /******************/
 
