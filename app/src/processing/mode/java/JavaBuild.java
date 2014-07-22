@@ -24,7 +24,9 @@ package processing.mode.java;
 
 import java.io.*;
 import java.util.*;
+import java.util.regex.Pattern;
 import java.util.zip.*;
+
 
 import org.apache.tools.ant.BuildException;
 import org.apache.tools.ant.DefaultLogger;
@@ -236,6 +238,7 @@ public class JavaBuild {
 
     //to test
     //#include ../includes/Point.pde
+	//#include ..\includes\Point.pde - doesn't work on mac
 
     SketchCode[] arr = sketch.getCode();
 
@@ -246,8 +249,9 @@ public class JavaBuild {
 
     String[] extensions = mode.getExtensions();
 
-
     System.out.println("----------------");
+
+	Pattern includeRegex = Pattern.compile("^#include +(.+)$", Pattern.DOTALL);
 
     int len = arr.length;
     for(int i = 0; i < len; i++) {
@@ -347,6 +351,11 @@ public class JavaBuild {
       }
     }
 
+	//remove any include directives from the combined code
+	String combinedCode = bigCode.toString();
+	combinedCode = includeRegex.matcher(combinedCode).replaceAll("");
+
+
 //    // initSketchSize() sets the internal sketchWidth/Height/Renderer vars
 //    // in the preprocessor. Those are used in preproc.write() so that they
 //    // can be turned into sketchXxxx() methods.
@@ -376,7 +385,7 @@ public class JavaBuild {
       final File java = new File(outputFolder, sketch.getName() + ".java");
       final PrintWriter stream = new PrintWriter(new FileWriter(java));
       try {
-        result = preprocessor.write(stream, bigCode.toString(), codeFolderPackages);
+        result = preprocessor.write(stream, combinedCode, codeFolderPackages);
       } finally {
         stream.close();
       }
