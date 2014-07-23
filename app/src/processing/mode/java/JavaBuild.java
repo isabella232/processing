@@ -237,18 +237,9 @@ public class JavaBuild {
 
 /********* Code added to include support for Include folder *********/
 
-
-    //to test
-    //#include ../includes/Point.pde
-	//#include ..\includes\Point.pde - doesn't work on mac
-	//#include ../includes/Point2.pde - throw error if you can find an include
-	//throw errors when things dont work / are rejected
-	
-	//use getAbsolutePath no
-
     SketchCode[] arr = sketch.getCode();
 
-    ArrayList<SketchCode> includes = new ArrayList<SketchCode>(Arrays.asList(sketch.getCode()));
+    ArrayList<SketchCode> includes = new ArrayList<SketchCode>(Arrays.asList(arr));
     HashMap<String, Boolean> foundPaths = new HashMap<String, Boolean>();
 
     String[] extensions = mode.getExtensions();
@@ -276,15 +267,16 @@ public class JavaBuild {
 		
 		try {
 	        if(Files.isSameFile(sketch.getFolder().toPath(), f.getParentFile().toPath())) {
-				throw new SketchException("Cannot include files in the same directory as the main file : " + path);
+				throw new SketchException("Cannot include files from the same directory as the main file : " + path);
 	        }
 		} catch(Exception e) {
 			throw new SketchException(e.getMessage());
 		}
 
+		//todo there are scenarios where this could fail, if different relative paths
+		//are used to point to the same file
         //check if we have already included the file
-
-        Boolean found = foundPaths.get(f.getAbsolutePath());
+        Boolean found = foundPaths.get(f.toPath().normalize().toString());
         if(found != null && found) {
           System.out.println("already included file");
           continue;
@@ -307,12 +299,7 @@ public class JavaBuild {
             // Don't allow people to use files with invalid names, since on load,
             // it would be otherwise possible to sneak in nasty filenames. [0116]
             if (Sketch.isSanitaryName(base)) {
-
-                System.out.println("adding path to found paths : " + f.getAbsolutePath());
-                foundPaths.put(f.getAbsolutePath(), true);
-
-                System.out.println("creating new sketch code : " + (new File(f.getParentFile(), filename)).getAbsolutePath());
-
+                foundPaths.put(f.toPath().normalize().toString(), true);
                 includes.add(new SketchCode(new File(f.getParentFile(), filename), extension));
             }
           }
