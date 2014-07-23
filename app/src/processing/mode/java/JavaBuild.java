@@ -27,6 +27,8 @@ import java.util.*;
 import java.util.regex.*;
 import java.util.zip.*;
 
+import java.nio.file.Files;
+
 
 import org.apache.tools.ant.BuildException;
 import org.apache.tools.ant.DefaultLogger;
@@ -240,6 +242,7 @@ public class JavaBuild {
     //#include ../includes/Point.pde
 	//#include ..\includes\Point.pde - doesn't work on mac
 	//#include ../includes/Point2.pde - throw error if you can find an include
+	//throw errors when things dont work / are rejected
 	
 	//use getAbsolutePath no
 
@@ -248,11 +251,7 @@ public class JavaBuild {
     ArrayList<SketchCode> includes = new ArrayList<SketchCode>(Arrays.asList(sketch.getCode()));
     HashMap<String, Boolean> foundPaths = new HashMap<String, Boolean>();
 
-    String INCLUDE_TOKEN = "#include ";
-
     String[] extensions = mode.getExtensions();
-
-    System.out.println("----------------");
 
 	Pattern includeRegex = Pattern.compile("^#include +(.+)$", Pattern.MULTILINE);
 
@@ -261,40 +260,27 @@ public class JavaBuild {
       SketchCode sk = arr[i];
 
       String program = sk.getProgram();
-      //Scanner s = new Scanner(program);
 	
 	  Matcher matcher = includeRegex.matcher(program);
 
       String path;
       while(matcher.find()) {
 		path = matcher.group(1);
-		
-        System.out.println("found include : " + path);
 
         File f = new File(sketch.getFolder(), path);
 
-		/*
-        try {
-          f = f.getCanonicalFile();
-        } catch(Exception e) {
-          System.out.println("found include : " + e.getMessage());
-          continue;
-        }
-		*/
-
-        System.out.println("absolute path : " + f.getAbsolutePath());
-
         if(!f.exists() || f.isDirectory()) {
           System.out.println("file doesnt exist");
-          continue;
+			throw new SketchException("#include file does not exist : " + path + " : " + f.getAbsolutePath());
         }
-
-		//todo : check if these are equal
-		//http://docs.oracle.com/javase/tutorial/essential/io/check.html
-        if((sketch.getFolder().getAbsolutePath() == f.getParentFile().getAbsolutePath())) {
-          System.out.println("file is in root folder");
-          continue;
-        }
+		
+		try {
+	        if(Files.isSameFile(sketch.getFolder().toPath(), f.getParentFile().toPath())) {
+				throw new SketchException("Cannot include files in the same directory as the main file : " + path);
+	        }
+		} catch(Exception e) {
+			throw new SketchException(e.getMessage());
+		}
 
         //check if we have already included the file
 
@@ -305,8 +291,6 @@ public class JavaBuild {
         }
 
         String filename = f.getName();
-
-        System.out.println("filename : " + filename);
 
         // Ignoring the dot prefix files is especially important to avoid files
         // with the ._ prefix on Mac OS X. (You'll see this with Mac files on
@@ -343,7 +327,6 @@ public class JavaBuild {
 
     StringBuffer bigCode = new StringBuffer();
     int bigCount = 0;
-
 
 	//Combine all of the sketch files, from the main folder
 	//and include folders
