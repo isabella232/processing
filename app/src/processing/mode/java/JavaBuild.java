@@ -24,7 +24,7 @@ package processing.mode.java;
 
 import java.io.*;
 import java.util.*;
-import java.util.regex.Pattern;
+import java.util.regex.*;
 import java.util.zip.*;
 
 
@@ -239,6 +239,9 @@ public class JavaBuild {
     //to test
     //#include ../includes/Point.pde
 	//#include ..\includes\Point.pde - doesn't work on mac
+	//#include ../includes/Point2.pde - throw error if you can find an include
+	
+	//use getAbsolutePath no
 
     SketchCode[] arr = sketch.getCode();
 
@@ -251,80 +254,82 @@ public class JavaBuild {
 
     System.out.println("----------------");
 
-	Pattern includeRegex = Pattern.compile("^#include +(.+)$", Pattern.DOTALL);
+	Pattern includeRegex = Pattern.compile("^#include +(.+)$", Pattern.MULTILINE);
 
     int len = arr.length;
     for(int i = 0; i < len; i++) {
       SketchCode sk = arr[i];
 
       String program = sk.getProgram();
-      Scanner s = new Scanner(program);
+      //Scanner s = new Scanner(program);
+	
+	  Matcher matcher = includeRegex.matcher(program);
 
-      String tmp;
-      while(s.hasNextLine()) {
-        tmp = s.nextLine();
+      String path;
+      while(matcher.find()) {
+		path = matcher.group(1);
+		
+        System.out.println("found include : " + path);
 
-        //probably better to use a regex
-        if(tmp.startsWith(INCLUDE_TOKEN)) {
-          String path = tmp.substring(INCLUDE_TOKEN.length()).trim();
+        File f = new File(sketch.getFolder(), path);
 
-          System.out.println("found include : " + path);
+		/*
+        try {
+          f = f.getCanonicalFile();
+        } catch(Exception e) {
+          System.out.println("found include : " + e.getMessage());
+          continue;
+        }
+		*/
 
-          File f = new File(sketch.getFolder(), path);
+        System.out.println("absolute path : " + f.getAbsolutePath());
 
-          try {
-            f = f.getCanonicalFile();
-          } catch(Exception e) {
-            System.out.println("found include : " + e.getMessage());
-            continue;
-          }
-          System.out.println("absolute path : " + f.getAbsolutePath());
+        if(!f.exists() || f.isDirectory()) {
+          System.out.println("file doesnt exist");
+          continue;
+        }
 
-          if(!f.exists() || f.isDirectory()) {
-            System.out.println("file doesnt exist");
-            continue;
-          }
+		//todo : check if these are equal
+		//http://docs.oracle.com/javase/tutorial/essential/io/check.html
+        if((sketch.getFolder().getAbsolutePath() == f.getParentFile().getAbsolutePath())) {
+          System.out.println("file is in root folder");
+          continue;
+        }
 
-          if((sketch.getFolder().getAbsolutePath() == f.getParentFile().getAbsolutePath())) {
-            System.out.println("file is in root folder");
-            continue;
-          }
+        //check if we have already included the file
 
-          //check if we have already included the file
+        Boolean found = foundPaths.get(f.getAbsolutePath());
+        if(found != null && found) {
+          System.out.println("already included file");
+          continue;
+        }
 
-          Boolean found = foundPaths.get(f.getAbsolutePath());
-          if(found != null && found) {
-            System.out.println("already included file");
-            continue;
-          }
+        String filename = f.getName();
 
-          String filename = f.getName();
+        System.out.println("filename : " + filename);
 
-          System.out.println("filename : " + filename);
+        // Ignoring the dot prefix files is especially important to avoid files
+        // with the ._ prefix on Mac OS X. (You'll see this with Mac files on
+        // non-HFS drives, i.e. a thumb drive formatted FAT32.)
+        if (filename.startsWith(".")) continue;
 
-          // Ignoring the dot prefix files is especially important to avoid files
-          // with the ._ prefix on Mac OS X. (You'll see this with Mac files on
-          // non-HFS drives, i.e. a thumb drive formatted FAT32.)
-          if (filename.startsWith(".")) continue;
+        String base = filename;
 
-          String base = filename;
+        // now strip off the .pde and .java extensions
+        for (String extension : extensions) {
+          if (base.toLowerCase().endsWith("." + extension)) {
+            base = base.substring(0, base.length() - (extension.length() + 1));
 
-          // now strip off the .pde and .java extensions
-          for (String extension : extensions) {
-            if (base.toLowerCase().endsWith("." + extension)) {
-              base = base.substring(0, base.length() - (extension.length() + 1));
+            // Don't allow people to use files with invalid names, since on load,
+            // it would be otherwise possible to sneak in nasty filenames. [0116]
+            if (Sketch.isSanitaryName(base)) {
 
-              // Don't allow people to use files with invalid names, since on load,
-              // it would be otherwise possible to sneak in nasty filenames. [0116]
-              if (Sketch.isSanitaryName(base)) {
+                System.out.println("adding path to found paths : " + f.getAbsolutePath());
+                foundPaths.put(f.getAbsolutePath(), true);
 
-                  System.out.println("adding path to found paths : " + f.getAbsolutePath());
-                  foundPaths.put(f.getAbsolutePath(), true);
+                System.out.println("creating new sketch code : " + (new File(f.getParentFile(), filename)).getAbsolutePath());
 
-                  System.out.println("creating new sketch code : " + (new File(f.getParentFile(), filename)).getAbsolutePath());
-
-                  includes.add(new SketchCode(new File(f.getParentFile(), filename), extension));
-              }
+                includes.add(new SketchCode(new File(f.getParentFile(), filename), extension));
             }
           }
         }
