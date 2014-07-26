@@ -24,11 +24,9 @@ package processing.mode.java;
 
 import java.io.*;
 import java.util.*;
-import java.util.regex.*;
 import java.util.zip.*;
 
-import java.nio.file.Files;
-
+import java.util.regex.Pattern;
 
 import org.apache.tools.ant.BuildException;
 import org.apache.tools.ant.DefaultLogger;
@@ -235,89 +233,12 @@ public class JavaBuild {
       javaLibraryPath = "";
     }
 
-/********* Code added to include support for Include folder *********/
-
-    SketchCode[] arr = sketch.getCode();
-
-    ArrayList<SketchCode> includes = new ArrayList<SketchCode>(Arrays.asList(arr));
-    HashMap<String, Boolean> foundPaths = new HashMap<String, Boolean>();
-
-    String[] extensions = mode.getExtensions();
-
-	Pattern includeRegex = Pattern.compile("^#include +(.+)$", Pattern.MULTILINE);
-
-    int len = arr.length;
-    for(int i = 0; i < len; i++) {
-      SketchCode sk = arr[i];
-
-      String program = sk.getProgram();
-	
-	  Matcher matcher = includeRegex.matcher(program);
-
-      String path;
-      while(matcher.find()) {
-		path = matcher.group(1);
-
-        File f = new File(sketch.getFolder(), path);
-
-        if(!f.exists() || f.isDirectory()) {
-          System.out.println("file doesnt exist");
-			throw new SketchException("#include file does not exist : " + path + " : " + f.getAbsolutePath());
-        }
-		
-		try {
-	        if(Files.isSameFile(sketch.getFolder().toPath(), f.getParentFile().toPath())) {
-				throw new SketchException("Cannot include files from the same directory as the main file : " + path);
-	        }
-		} catch(Exception e) {
-			throw new SketchException(e.getMessage());
-		}
-
-		//todo there are scenarios where this could fail, if different relative paths
-		//are used to point to the same file
-        //check if we have already included the file
-        Boolean found = foundPaths.get(f.toPath().normalize().toString());
-        if(found != null && found) {
-          System.out.println("already included file");
-          continue;
-        }
-
-        String filename = f.getName();
-
-        // Ignoring the dot prefix files is especially important to avoid files
-        // with the ._ prefix on Mac OS X. (You'll see this with Mac files on
-        // non-HFS drives, i.e. a thumb drive formatted FAT32.)
-        if (filename.startsWith(".")) continue;
-
-        String base = filename;
-
-        // now strip off the .pde and .java extensions
-        for (String extension : extensions) {
-          if (base.toLowerCase().endsWith("." + extension)) {
-            base = base.substring(0, base.length() - (extension.length() + 1));
-
-            // Don't allow people to use files with invalid names, since on load,
-            // it would be otherwise possible to sneak in nasty filenames. [0116]
-            if (Sketch.isSanitaryName(base)) {
-                foundPaths.put(f.toPath().normalize().toString(), true);
-                includes.add(new SketchCode(new File(f.getParentFile(), filename), extension));
-            }
-          }
-        }
-      }
-    }
-     
-    arr = includes.toArray(new SketchCode[includes.size()]);
-
-
-/******************/
+    // 1. concatenate all .pde files to the 'main' pde
+    //    store line number for starting point of each code bit
 
     StringBuffer bigCode = new StringBuffer();
     int bigCount = 0;
-
-	//Combine all of the sketch files, from the main folder
-	//and include folders
-    for (SketchCode sc : arr) {
+    for (SketchCode sc : sketch.getCode()) {
       if (sc.isExtension("pde")) {
         sc.setPreprocOffset(bigCount);
         bigCode.append(sc.getProgram());
@@ -326,10 +247,10 @@ public class JavaBuild {
       }
     }
 
+	Pattern includeRegex = Pattern.compile("^#include +(.+)$", Pattern.MULTILINE);
 	//remove any include directives from the combined code
 	String combinedCode = bigCode.toString();
 	combinedCode = includeRegex.matcher(combinedCode).replaceAll("");
-
 
 //    // initSketchSize() sets the internal sketchWidth/Height/Renderer vars
 //    // in the preprocessor. Those are used in preproc.write() so that they

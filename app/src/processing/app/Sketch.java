@@ -30,6 +30,13 @@ import java.io.*;
 
 import javax.swing.*;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+
 
 /**
  * Stores information about files in the current sketch.
@@ -131,6 +138,64 @@ public class Sketch {
     load();
   }
 
+	
+	protected ArrayList<File> getIncludeFiles(File f) {
+		
+		ArrayList <File> files = new ArrayList<File>();
+		HashMap<String, Boolean> foundPaths = new HashMap<String, Boolean>();
+		Pattern includeRegex = Pattern.compile("^#include +(.+)$", Pattern.MULTILINE);
+
+		String program = "";
+		try {
+			byte[] encoded = Files.readAllBytes(f.toPath());
+	  		program = new String(encoded, "UTF8");
+		}
+		catch(IOException e) {
+			//todo: handle error
+		}
+
+		//String program = sk.getProgram();
+
+		Matcher matcher = includeRegex.matcher(program);
+
+		String path;
+		while(matcher.find()) {
+			path = matcher.group(1);
+
+			File _f = new File(getFolder(), path);
+
+			if(!_f.exists() || f.isDirectory()) {
+				System.out.println("Include file doesnt exist : " + path + " : " + _f.getAbsolutePath());
+				//throw new SketchException("#include file does not exist : " + path + " : " + _f.getAbsolutePath());
+				continue;
+			}
+
+			try {
+				if(Files.isSameFile(getFolder().toPath(), _f.getParentFile().toPath())) {
+					throw new SketchException("Cannot include files from the same directory as the main file : " + path);
+				}
+			} catch(Exception e) {
+				//throw new SketchException(e.getMessage());
+				System.out.println(e.getMessage());
+				continue;
+			}
+
+		    //check if we have already included the file
+		    Boolean found = foundPaths.get(_f.toPath().normalize().toString());
+		    if(found != null && found) {
+		    	System.out.println("already included file");
+				continue;
+			}
+
+			files.add(_f);
+			foundPaths.put(_f.toPath().normalize().toString(), true);
+		}
+		
+		//now we can loop through the files we found, and search for more includes
+		
+		//reset found paths
+		return files;
+	}
 
   /**
    * Build the list of files.
@@ -151,24 +216,57 @@ public class Sketch {
     dataFolder = new File(folder, "data");
 
     // get list of files in the sketch folder
-    String list[] = folder.list();
+    //String list[] = folder.list();
 
     // reset these because load() may be called after an
     // external editor event. (fix for 0099)
     codeCount = 0;
 
-    code = new SketchCode[list.length];
+	//todo: make this Files
+    
+
+	ArrayList <File> files = new ArrayList<File>();
 
     String[] extensions = mode.getExtensions();
 
-    for (String filename : list) {
+  	File[] directoryListing = folder.listFiles();
+  	if (directoryListing != null) {
+    	for (File child : directoryListing) {
+			
+			files.add(child);
+			
+			if(child.isDirectory()) {
+				continue;
+			}
+			
+  			String name = child.getName();
+
+			if (name.startsWith(".")) {
+				continue;
+			}
+			
+			if(!name.toLowerCase().endsWith(".pde")) {
+				continue;
+			}
+			
+			files.addAll(getIncludeFiles(child));
+    	}
+  	}
+
+	//code = new SketchCode[list.length];
+	code = new SketchCode[files.size()];
+	
+	//todo: loop through the files
+    for (File f : files) {
+		String filename = f.getName();
+	
       // Ignoring the dot prefix files is especially important to avoid files
       // with the ._ prefix on Mac OS X. (You'll see this with Mac files on
       // non-HFS drives, i.e. a thumb drive formatted FAT32.)
       if (filename.startsWith(".")) continue;
 
       // Don't let some wacko name a directory blah.pde or bling.java.
-      if (new File(folder, filename).isDirectory()) continue;
+      if (f.isDirectory()) continue;
 
       // figure out the name without any extension
       String base = filename;
@@ -180,8 +278,8 @@ public class Sketch {
           // Don't allow people to use files with invalid names, since on load,
           // it would be otherwise possible to sneak in nasty filenames. [0116]
           if (isSanitaryName(base)) {
-            code[codeCount++] =
-              new SketchCode(new File(folder, filename), extension);
+            code[codeCount++] = new SketchCode(f, extension);
+              //new SketchCode(new File(folder, filename), extension);
           }
         }
       }
