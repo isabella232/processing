@@ -24,17 +24,19 @@ package processing.app.platform;
 
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.IOException;
 
 import com.apple.eio.FileManager;
 
 import processing.app.Base;
-import processing.app.Platform;
+import processing.app.Messages;
+import processing.app.platform.DefaultPlatform;
 
 
 /**
  * Platform handler for Mac OS X.
  */
-public class MacPlatform extends Platform {
+public class MacPlatform extends DefaultPlatform {
 
   // Removing for 2.0b8 because Quaqua doesn't have OS X 10.8 version.
   /*
@@ -47,9 +49,21 @@ public class MacPlatform extends Platform {
   }
   */
 
+  public void saveLanguage(String language) {
+    String[] cmdarray = new String[]{
+      "defaults", "write",
+      System.getProperty("user.home") + "/Library/Preferences/org.processing.app",
+      "AppleLanguages", "-array", language
+    };
+    try {
+      Runtime.getRuntime().exec(cmdarray);
+    } catch (IOException e) {
+      Messages.log("Error saving platform language: " + e.getMessage());
+    }
+  }
 
-  public void init(Base base) {
-    super.init(base);
+  public void initBase(Base base) {
+    super.initBase(base);
     System.setProperty("apple.laf.useScreenMenuBar", "true");
     ThinkDifferent.init(base);
     /*
@@ -80,8 +94,8 @@ public class MacPlatform extends Platform {
     }
     */
   }
-  
-  
+
+
   public File getSettingsFolder() throws Exception {
     return new File(getLibraryFolder(), "Processing");
   }
@@ -102,10 +116,10 @@ public class MacPlatform extends Platform {
     }
     */
   }
-  
 
-//  /** 
-//   * Moves the specified File object (which might be a file or folder) 
+
+//  /**
+//   * Moves the specified File object (which might be a file or folder)
 //   * to the trash.
 //   */
 //  public boolean deleteFile(File file) throws IOException {

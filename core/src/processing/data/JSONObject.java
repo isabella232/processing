@@ -592,7 +592,7 @@ public class JSONObject {
    *
    * @webref jsonobject:method
    * @brief Gets the int value associated with a key
-   * @param key a key string
+   * @param key A key string.
    * @return The integer value.
    * @throws JSONException if the key is not found or if the value cannot
    *  be converted to an integer.
@@ -900,8 +900,10 @@ public class JSONObject {
 
 
   /**
-   * Determine if the value associated with the key is null or if there is
-   *  no value.
+   * Determine if the value associated with the key is null or if there is 
+   * no value.
+   * 
+   * @webref
    * @param key   A key string.
    * @return      true if there is no value associated with the key or if
    *  the value is the JSONObject.NULL object.
@@ -1168,7 +1170,7 @@ public class JSONObject {
    * @see JSONObject#setBoolean(String, boolean)
    */
   public JSONObject setInt(String key, int value) {
-    this.put(key, new Integer(value));
+    this.put(key, Integer.valueOf(value));
     return this;
   }
 
@@ -1182,7 +1184,7 @@ public class JSONObject {
    * @throws JSONException If the key is null.
    */
   public JSONObject setLong(String key, long value) {
-    this.put(key, new Long(value));
+    this.put(key, Long.valueOf(value));
     return this;
   }
 
@@ -1492,9 +1494,9 @@ public class JSONObject {
             return d;
           }
         } else {
-          Long myLong = new Long(string);
+          Long myLong = Long.valueOf(string);
           if (myLong.longValue() == myLong.intValue()) {
-            return new Integer(myLong.intValue());
+            return Integer.valueOf(myLong.intValue());
           } else {
             return myLong;
           }
@@ -1554,12 +1556,36 @@ public class JSONObject {
 
 
   public boolean save(File file, String options) {
-    return write(PApplet.createWriter(file));
+    PrintWriter writer = PApplet.createWriter(file);
+    boolean success = write(writer, options);
+    writer.close();
+    return success;
   }
 
 
   public boolean write(PrintWriter output) {
-    output.print(format(2));
+    return write(output, null);
+  }
+
+
+  public boolean write(PrintWriter output, String options) {
+    int indentFactor = 2;
+    if (options != null) {
+      String[] opts = PApplet.split(options, ',');
+      for (String opt : opts) {
+        if (opt.equals("compact")) {
+          indentFactor = -1;
+        } else if (opt.startsWith("indent=")) {
+          indentFactor = PApplet.parseInt(opt.substring(7), -2);
+          if (indentFactor == -2) {
+            throw new IllegalArgumentException("Could not read a number from " + opt);
+          }
+        } else {
+          System.err.println("Ignoring " + opt);
+        }
+      }
+    }
+    output.print(format(indentFactor));
     output.flush();
     return true;
   }
@@ -1595,7 +1621,7 @@ public class JSONObject {
   public String format(int indentFactor) {
     StringWriter w = new StringWriter();
     synchronized (w.getBuffer()) {
-      return this.write(w, indentFactor, 0).toString();
+      return this.writeInternal(w, indentFactor, 0).toString();
     }
   }
 
@@ -1728,16 +1754,16 @@ public class JSONObject {
     if (value == null || value.equals(null)) {
       writer.write("null");
     } else if (value instanceof JSONObject) {
-      ((JSONObject) value).write(writer, indentFactor, indent);
+      ((JSONObject) value).writeInternal(writer, indentFactor, indent);
     } else if (value instanceof JSONArray) {
-      ((JSONArray) value).write(writer, indentFactor, indent);
+      ((JSONArray) value).writeInternal(writer, indentFactor, indent);
     } else if (value instanceof Map) {
-      new JSONObject(value).write(writer, indentFactor, indent);
+      new JSONObject(value).writeInternal(writer, indentFactor, indent);
     } else if (value instanceof Collection) {
-      new JSONArray(value).write(writer, indentFactor,
+      new JSONArray(value).writeInternal(writer, indentFactor,
                                               indent);
     } else if (value.getClass().isArray()) {
-      new JSONArray(value).write(writer, indentFactor, indent);
+      new JSONArray(value).writeInternal(writer, indentFactor, indent);
     } else if (value instanceof Number) {
       writer.write(numberToString((Number) value));
     } else if (value instanceof Boolean) {
@@ -1766,15 +1792,14 @@ public class JSONObject {
   }
 
   /**
-   * Write the contents of the JSONObject as JSON text to a writer. For
-   * compactness, no whitespace is added.
+   * Write the contents of the JSONObject as JSON text to a writer.
    * <p>
    * Warning: This method assumes that the data structure is acyclical.
    *
    * @return The writer.
    * @throws JSONException
    */
-  protected Writer write(Writer writer, int indentFactor, int indent) {
+  protected Writer writeInternal(Writer writer, int indentFactor, int indent) {
     try {
       boolean commanate = false;
       final int length = this.size();

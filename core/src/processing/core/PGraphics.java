@@ -3,7 +3,8 @@
 /*
   Part of the Processing project - http://processing.org
 
-  Copyright (c) 2004-11 Ben Fry and Casey Reas
+  Copyright (c) 2013-15 The Processing Foundation
+  Copyright (c) 2004-12 Ben Fry and Casey Reas
   Copyright (c) 2001-04 Massachusetts Institute of Technology
 
   This library is free software; you can redistribute it and/or
@@ -24,9 +25,23 @@
 
 package processing.core;
 
-import java.awt.*;
+// Used for color conversion functions
+import java.awt.Color;
+
+// Used for the 'image' object that's been here forever
+import java.awt.Font;
+import java.awt.Image;
+
+import java.io.InputStream;
+import java.util.Map;
 import java.util.HashMap;
 import java.util.WeakHashMap;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 
 import processing.opengl.PGL;
 import processing.opengl.PShader;
@@ -134,8 +149,8 @@ import processing.opengl.PShader;
    */
 public class PGraphics extends PImage implements PConstants {
 
-  /// Canvas object that covers rendering this graphics on screen.
-  public Canvas canvas;
+//  /// Canvas object that covers rendering this graphics on screen.
+//  public Canvas canvas;
 
   // ........................................................
 
@@ -151,18 +166,19 @@ public class PGraphics extends PImage implements PConstants {
   /// width * height (useful for many calculations)
   public int pixelCount;
 
-  /// true if smoothing is enabled (read-only)
-  public boolean smooth;
+//  /// true if smoothing is enabled (read-only)
+//  public boolean smooth;
 
   /// the anti-aliasing level for renderers that support it
-  public int quality;
+  public int smooth;
+
 
   // ........................................................
 
   /// true if defaults() has been called a first time
   protected boolean settingsInited;
 
-  /// true if defaults() has been called a first time
+  /// true if settings should be re-applied on next beginDraw()
   protected boolean reapplySettings;
 
   /// set to a PGraphics object being used inside a beginRaw/endRaw() block
@@ -174,12 +190,14 @@ public class PGraphics extends PImage implements PConstants {
   protected String path;
 
   /**
-   * true if this is the main drawing surface for a particular sketch.
-   * This would be set to false for an offscreen buffer or if it were
-   * created any other way than size(). When this is set, the listeners
-   * are also added to the sketch.
+   * True if this is the main graphics context for a sketch.
+   * False for offscreen buffers retrieved via createGraphics().
    */
-  protected boolean primarySurface;
+  protected boolean primaryGraphics;
+
+//  // TODO nervous about leaving this here since it seems likely to create
+//  // back-references where we don't want them
+//  protected PSurface surface;
 
   // ........................................................
 
@@ -435,6 +453,9 @@ public class PGraphics extends PImage implements PConstants {
   /** The current text leading (read-only) */
   public float textLeading;
 
+  static final protected String ERROR_TEXTFONT_NULL_PFONT =
+    "A null PFont was passed to textFont()";
+
   // ........................................................
 
   // Material properties
@@ -473,6 +494,11 @@ public class PGraphics extends PImage implements PConstants {
   protected float backgroundR, backgroundG, backgroundB, backgroundA;
   protected int backgroundRi, backgroundGi, backgroundBi, backgroundAi;
 
+  static final protected String ERROR_BACKGROUND_IMAGE_SIZE =
+    "background image must be the same size as your application";
+  static final protected String ERROR_BACKGROUND_IMAGE_FORMAT =
+    "background images should be RGB or ARGB";
+
 
   /** The current blending mode. */
   protected int blendMode;
@@ -495,16 +521,25 @@ public class PGraphics extends PImage implements PConstants {
 //  float[][] matrixInvStack = new float[MATRIX_STACK_DEPTH][16];
 //  int matrixStackDepth;
 
-  static final int MATRIX_STACK_DEPTH = 32;
+  static final protected int MATRIX_STACK_DEPTH = 32;
+
+  static final protected String ERROR_PUSHMATRIX_OVERFLOW =
+    "Too many calls to pushMatrix().";
+  static final protected String ERROR_PUSHMATRIX_UNDERFLOW =
+    "Too many calls to popMatrix(), and not enough to pushMatrix().";
+
 
   // ........................................................
 
   /**
    * Java AWT Image object associated with this renderer. For the 1.0 version
-   * of P2D and P3D, this was be associated with their MemoryImageSource.
+   * of P2D and P3D, this was associated with their MemoryImageSource.
    * For PGraphicsJava2D, it will be the offscreen drawing buffer.
    */
   public Image image;
+
+  /** Surface object that we're talking to */
+  protected PSurface surface;
 
   // ........................................................
 
@@ -643,7 +678,7 @@ public class PGraphics extends PImage implements PConstants {
    * vertex() calls will be based on coordinates that are
    * based on the IMAGE or NORMALIZED.
    */
-  public int textureMode    = IMAGE;
+  public int textureMode = IMAGE;
 
   /**
    * Current horizontal coordinate for texture, will always
@@ -673,21 +708,24 @@ public class PGraphics extends PImage implements PConstants {
 
   // INTERNAL
 
+  // Most renderers will only override the default implementation of one or
+  // two of the setXxxx() methods, so they're broken out here since the
+  // default implementations for each are simple, obvious, and common.
+  // They're also separate to avoid a monolithic and fragile constructor.
 
-  /**
-   * Constructor for the PGraphics object. Use this to ensure that
-   * the defaults get set properly. In a subclass, use this(w, h)
-   * as the first line of a subclass' constructor to properly set
-   * the internal fields and defaults.
-   *
-   */
+
   public PGraphics() {
+    // Allows subclasses to override
   }
 
 
   public void setParent(PApplet parent) {  // ignore
     this.parent = parent;
-    quality = parent.sketchQuality();
+
+    // Some renderers (OpenGL) need to know what smoothing level will be used
+    // before the rendering surface is even created.
+    smooth = parent.sketchSmooth();
+    pixelDensity = parent.sketchPixelDensity();
   }
 
 
@@ -697,12 +735,12 @@ public class PGraphics extends PImage implements PConstants {
    * else that goes along with that.
    */
   public void setPrimary(boolean primary) {  // ignore
-    this.primarySurface = primary;
+    this.primaryGraphics = primary;
 
     // base images must be opaque (for performance and general
     // headache reasons.. argh, a semi-transparent opengl surface?)
     // use createGraphics() if you want a transparent surface.
-    if (primarySurface) {
+    if (primaryGraphics) {
       format = RGB;
     }
   }
@@ -718,16 +756,12 @@ public class PGraphics extends PImage implements PConstants {
 //  }
 
 
-  public void setFrameRate(float frameRate) {  // ignore
-  }
-
-
   /**
    * The final step in setting up a renderer, set its size of this renderer.
    * This was formerly handled by the constructor, but instead it's been broken
    * out so that setParent/setPrimary/setPath can be handled differently.
    *
-   * Important that this is ignored by preproc.pl because otherwise it will
+   * Important: this is ignored by the Methods task because otherwise it will
    * override setSize() in PApplet/Applet/Component, which will 1) not call
    * super.setSize(), and 2) will cause the renderer to be resized from the
    * event thread (EDT), causing a nasty crash as it collides with the
@@ -736,19 +770,28 @@ public class PGraphics extends PImage implements PConstants {
   public void setSize(int w, int h) {  // ignore
     width = w;
     height = h;
-//    width1 = width - 1;
-//    height1 = height - 1;
 
-    allocate();
-    reapplySettings();
+    /** {@link PImage.pixelFactor} set in {@link PImage#PImage()} */
+    pixelWidth = width * pixelDensity;
+    pixelHeight = height * pixelDensity;
+
+//    if (surface != null) {
+//      allocate();
+//    }
+//    reapplySettings();
+    reapplySettings = true;
   }
 
 
-  /**
-   * Allocate memory for this renderer. Generally will need to be implemented
-   * for all renderers.
-   */
-  protected void allocate() { }
+//  public void setSmooth(int level) {
+//    this.smooth = level;
+//  }
+
+
+//  /**
+//   * Allocate memory or an image buffer for this renderer.
+//   */
+//  protected void allocate() { }
 
 
   /**
@@ -759,6 +802,15 @@ public class PGraphics extends PImage implements PConstants {
    * endRaw(), in order to shut things off.
    */
   public void dispose() {  // ignore
+    if (primaryGraphics && asyncImageSaver != null) {
+      asyncImageSaver.dispose();
+      asyncImageSaver = null;
+    }
+  }
+
+
+  public PSurface createSurface() {  // ignore
+    return surface = new PSurfaceNone(this);
   }
 
 
@@ -776,7 +828,7 @@ public class PGraphics extends PImage implements PConstants {
    * @param renderer The PGraphics renderer associated to the image
    * @param storage The metadata required by the renderer
    */
-  public void setCache(PImage image, Object storage) {
+  public void setCache(PImage image, Object storage) {  // ignore
     cacheMap.put(image, storage);
   }
 
@@ -789,7 +841,7 @@ public class PGraphics extends PImage implements PConstants {
    * @param renderer The PGraphics renderer associated to the image
    * @return metadata stored for the specified renderer
    */
-  public Object getCache(PImage image) {
+  public Object getCache(PImage image) {  // ignore
     return cacheMap.get(image);
   }
 
@@ -798,7 +850,7 @@ public class PGraphics extends PImage implements PConstants {
    * Remove information associated with this renderer from the cache, if any.
    * @param renderer The PGraphics renderer whose cache data should be removed
    */
-  public void removeCache(PImage image) {
+  public void removeCache(PImage image) {  // ignore
     cacheMap.remove(image);
   }
 
@@ -809,31 +861,22 @@ public class PGraphics extends PImage implements PConstants {
   // FRAME
 
 
-  /**
-   * Handle grabbing the focus from the parent applet. Other renderers can
-   * override this if handling needs to be different.
-   */
-  public void requestFocus() {  // ignore
-    if (parent != null) {
-      parent.requestFocusInWindow();
-    }
-  }
+//  /**
+//   * Some renderers have requirements re: when they are ready to draw.
+//   */
+//  public boolean canDraw() {  // ignore
+//    return true;
+//  }
 
 
-  /**
-   * Some renderers have requirements re: when they are ready to draw.
-   */
-  public boolean canDraw() {  // ignore
-    return true;
-  }
-
-
-  /**
-   * Try to draw, or put a draw request on the queue.
-   */
-  public void requestDraw() {  // ignore
-    parent.handleDraw();
-  }
+  // removing because renderers will have their own animation threads and
+  // can handle this however they wish
+//  /**
+//   * Try to draw, or put a draw request on the queue.
+//   */
+//  public void requestDraw() {  // ignore
+//    parent.handleDraw();
+//  }
 
 
   /**
@@ -906,12 +949,12 @@ public class PGraphics extends PImage implements PConstants {
   protected void defaultSettings() {  // ignore
 //    System.out.println("PGraphics.defaultSettings() " + width + " " + height);
 
-    //smooth();  // 2.0a5
-    if (quality > 0) {  // 2.0a5
-      smooth();
-    } else {
-      noSmooth();
-    }
+//    //smooth();  // 2.0a5
+//    if (quality > 0) {  // 2.0a5
+//      smooth();
+//    } else {
+//      noSmooth();
+//    }
 
     colorMode(RGB, 255);
     fill(255);
@@ -944,7 +987,7 @@ public class PGraphics extends PImage implements PConstants {
     // a gray background (when just a transparent surface or an empty pdf
     // is what's desired).
     // this background() call is for the Java 2D and OpenGL renderers.
-    if (primarySurface) {
+    if (primaryGraphics) {
       //System.out.println("main drawing surface bg " + getClass().getName());
       background(backgroundColor);
     }
@@ -953,7 +996,7 @@ public class PGraphics extends PImage implements PConstants {
 
     settingsInited = true;
     // defaultSettings() overlaps reapplySettings(), don't do both
-    //reapplySettings = false;
+    reapplySettings = false;
   }
 
 
@@ -1002,12 +1045,12 @@ public class PGraphics extends PImage implements PConstants {
     } else {
       noTint();
     }
-    if (smooth) {
-      smooth();
-    } else {
-      // Don't bother setting this, cuz it'll anger P3D.
-      noSmooth();
-    }
+//    if (smooth) {
+//      smooth();
+//    } else {
+//      // Don't bother setting this, cuz it'll anger P3D.
+//      noSmooth();
+//    }
     if (textFont != null) {
 //      System.out.println("  textFont in reapply is " + textFont);
       // textFont() resets the leading, so save it in case it's changed
@@ -1079,12 +1122,32 @@ public class PGraphics extends PImage implements PConstants {
    * hint(DISABLE_OPENGL_ERROR_REPORT) - Speeds up the P3D renderer setting
    * by not checking for errors while running. Undo with hint(ENABLE_OPENGL_ERROR_REPORT).
    * <br/> <br/>
+   * hint(ENABLE_BUFFER_READING) - Depth and stencil buffers in P2D/P3D will be
+   * downsampled to make PGL#readPixels work with multisampling. Enabling this
+   * introduces some overhead, so if you experience bad performance, disable
+   * multisampling with noSmooth() instead. This hint is not intended to be
+   * enabled and disabled repeatedely, so call this once in setup() or after
+   * creating your PGraphics2D/3D. You can restore the default with
+   * hint(DISABLE_BUFFER_READING) if you don't plan to read depth from
+   * this PGraphics anymore.
+   * <br/> <br/>
+   * hint(ENABLE_KEY_REPEAT) - Auto-repeating key events are discarded
+   * by default (works only in P2D/P3D); use this hint to get all the key events
+   * (including auto-repeated). Call hint(DISABLE_KEY_REPEAT) to get events
+   * only when the key goes physically up or down.
+   * <br/> <br/>
+   * hint(DISABLE_ASYNC_SAVEFRAME) - P2D/P3D only - save() and saveFrame()
+   * will not use separate threads for saving and will block until the image
+   * is written to the drive. This was the default behavior in 3.0b7 and before.
+   * To enable, call hint(ENABLE_ASYNC_SAVEFRAME).
+   * <br/> <br/>
    * As of release 0149, unhint() has been removed in favor of adding
    * additional ENABLE/DISABLE constants to reset the default behavior. This
    * prevents the double negatives, and also reinforces which hints can be
    * enabled or disabled.
    *
    * ( end auto-generated )
+   *
    * @webref rendering
    * @param which name of the hint to be enabled or disabled
    * @see PGraphics
@@ -1097,6 +1160,11 @@ public class PGraphics extends PImage implements PConstants {
         which == DISABLE_NATIVE_FONTS) {
       showWarning("hint(ENABLE_NATIVE_FONTS) no longer supported. " +
                   "Use createFont() instead.");
+    }
+    if (which == ENABLE_KEY_REPEAT) {
+      parent.keyRepeatEnabled = true;
+    } else if (which == DISABLE_KEY_REPEAT) {
+      parent.keyRepeatEnabled = false;
     }
     if (which > 0) {
       hints[which] = true;
@@ -1205,6 +1273,37 @@ public class PGraphics extends PImage implements PConstants {
       }
     }
   }
+
+
+  public void attribPosition(String name, float x, float y, float z) {
+    showMissingWarning("attrib");
+  }
+
+
+  public void attribNormal(String name, float nx, float ny, float nz) {
+    showMissingWarning("attrib");
+  }
+
+
+  public void attribColor(String name, int color) {
+    showMissingWarning("attrib");
+  }
+
+
+  public void attrib(String name, float... values) {
+    showMissingWarning("attrib");
+  }
+
+
+  public void attrib(String name, int... values) {
+    showMissingWarning("attrib");
+  }
+
+
+  public void attrib(String name, boolean... values) {
+    showMissingWarning("attrib");
+  }
+
 
   /**
    * ( begin auto-generated from textureMode.xml )
@@ -1474,6 +1573,7 @@ public class PGraphics extends PImage implements PConstants {
     vertexCount++;
   }
 
+
   /**
    * Used by renderer subclasses or PShape to efficiently pass in already
    * formatted vertex information.
@@ -1588,6 +1688,7 @@ public class PGraphics extends PImage implements PConstants {
     showMissingWarning("beginContour");
   }
 
+
   /**
    * @webref shape:vertex
    */
@@ -1599,6 +1700,7 @@ public class PGraphics extends PImage implements PConstants {
   public void endShape() {
     endShape(OPEN);
   }
+
 
   /**
    * ( begin auto-generated from endShape.xml )
@@ -1625,6 +1727,7 @@ public class PGraphics extends PImage implements PConstants {
 
   // SHAPE I/O
 
+
   /**
    * @webref shape
    * @param filename name of file to load, can be .svg or .obj
@@ -1636,6 +1739,9 @@ public class PGraphics extends PImage implements PConstants {
   }
 
 
+  /**
+   * @nowebref
+   */
   public PShape loadShape(String filename, String options) {
     showMissingWarning("loadShape");
     return null;
@@ -1647,6 +1753,7 @@ public class PGraphics extends PImage implements PConstants {
 
   // SHAPE CREATION
 
+
   /**
    * @webref shape
    * @see PShape
@@ -1654,34 +1761,114 @@ public class PGraphics extends PImage implements PConstants {
    * @see PApplet#loadShape(String)
    */
   public PShape createShape() {
-    showMissingWarning("createShape");
-    return null;
+    // Defaults to GEOMETRY (rather than GROUP like the default constructor)
+    // because that's how people will use it within a sketch.
+    return createShape(PShape.GEOMETRY);
   }
 
 
-  public PShape createShape(PShape source) {
-    showMissingWarning("createShape");
-    return null;
-  }
-
-
-  /**
-   * @param type either POINTS, LINES, TRIANGLES, TRIANGLE_FAN, TRIANGLE_STRIP, QUADS, QUAD_STRIP
-   */
+  // POINTS, LINES, TRIANGLES, TRIANGLE_FAN, TRIANGLE_STRIP, QUADS, QUAD_STRIP
   public PShape createShape(int type) {
-    showMissingWarning("createShape");
-    return null;
+    // If it's a PRIMITIVE, it needs the 'params' field anyway
+    if (type == PConstants.GROUP ||
+        type == PShape.PATH ||
+        type == PShape.GEOMETRY) {
+      return createShapeFamily(type);
+    }
+    final String msg =
+      "Only GROUP, PShape.PATH, and PShape.GEOMETRY work with createShape()";
+    throw new IllegalArgumentException(msg);
+  }
+
+
+  /** Override this method to return an appropriate shape for your renderer */
+  protected PShape createShapeFamily(int type) {
+    return new PShape(this, type);
+//    showMethodWarning("createShape()");
+//    return null;
   }
 
 
   /**
-   * @param kind either LINE, TRIANGLE, RECT, ELLIPSE, ARC, SPHERE, BOX
+   * @param kind either POINT, LINE, TRIANGLE, QUAD, RECT, ELLIPSE, ARC, BOX, SPHERE
    * @param p parameters that match the kind of shape
    */
   public PShape createShape(int kind, float... p) {
-    showMissingWarning("createShape");
-    return null;
+    int len = p.length;
+
+    if (kind == POINT) {
+      if (is3D() && len != 2 && len != 3) {
+        throw new IllegalArgumentException("Use createShape(POINT, x, y) or createShape(POINT, x, y, z)");
+      } else if (is2D() && len != 2) {
+        throw new IllegalArgumentException("Use createShape(POINT, x, y)");
+      }
+      return createShapePrimitive(kind, p);
+
+    } else if (kind == LINE) {
+      if (is3D() && len != 4 && len != 6) {
+        throw new IllegalArgumentException("Use createShape(LINE, x1, y1, x2, y2) or createShape(LINE, x1, y1, z1, x2, y2, z1)");
+      } else if (is2D() && len != 4) {
+        throw new IllegalArgumentException("Use createShape(LINE, x1, y1, x2, y2)");
+      }
+      return createShapePrimitive(kind, p);
+
+    } else if (kind == TRIANGLE) {
+      if (len != 6) {
+        throw new IllegalArgumentException("Use createShape(TRIANGLE, x1, y1, x2, y2, x3, y3)");
+      }
+      return createShapePrimitive(kind, p);
+
+    } else if (kind == QUAD) {
+      if (len != 8) {
+        throw new IllegalArgumentException("Use createShape(QUAD, x1, y1, x2, y2, x3, y3, x4, y4)");
+      }
+      return createShapePrimitive(kind, p);
+
+    } else if (kind == RECT) {
+      if (len != 4 && len != 5 && len != 8) {
+        throw new IllegalArgumentException("Wrong number of parameters for createShape(RECT), see the reference");
+      }
+      return createShapePrimitive(kind, p);
+
+    } else if (kind == ELLIPSE) {
+      if (len != 4) {
+        throw new IllegalArgumentException("Use createShape(ELLIPSE, x, y, w, h)");
+      }
+      return createShapePrimitive(kind, p);
+
+    } else if (kind == ARC) {
+      if (len != 6 && len != 7) {
+        throw new IllegalArgumentException("Use createShape(ARC, x, y, w, h, start, stop) or createShape(ARC, x, y, w, h, start, stop, arcMode)");
+      }
+      return createShapePrimitive(kind, p);
+
+    } else if (kind == BOX) {
+      if (!is3D()) {
+        throw new IllegalArgumentException("createShape(BOX) is not supported in 2D");
+      } else if (len != 1 && len != 3) {
+        throw new IllegalArgumentException("Use createShape(BOX, size) or createShape(BOX, width, height, depth)");
+      }
+      return createShapePrimitive(kind, p);
+
+    } else if (kind == SPHERE) {
+      if (!is3D()) {
+        throw new IllegalArgumentException("createShape(SPHERE) is not supported in 2D");
+      } else if (len != 1) {
+        throw new IllegalArgumentException("Use createShape(SPHERE, radius)");
+      }
+      return createShapePrimitive(kind, p);
+    }
+    throw new IllegalArgumentException("Unknown shape type passed to createShape()");
   }
+
+
+  /** Override this to have a custom shape object used by your renderer. */
+  protected PShape createShapePrimitive(int kind, float... p) {
+//    showMethodWarning("createShape()");
+//    return null;
+    return new PShape(this, kind, p);
+  }
+
 
 
   //////////////////////////////////////////////////////////////
@@ -1727,6 +1914,7 @@ public class PGraphics extends PImage implements PConstants {
     showMissingWarning("shader");
   }
 
+
   /**
    * @param kind type of shader, either POINTS, LINES, or TRIANGLES
    */
@@ -1770,12 +1958,20 @@ public class PGraphics extends PImage implements PConstants {
 
   // CLIPPING
 
-  /*
-   * @webref rendering:shaders
-   * @param a x-coordinate of the rectangle by default
-   * @param b y-coordinate of the rectangle by default
-   * @param c width of the rectangle by default
-   * @param d height of the rectangle by default
+  /**
+   * ( begin auto-generated from clip.xml )
+   *
+   * Limits the rendering to the boundaries of a rectangle defined 
+   * by the parameters. The boundaries are drawn based on the state 
+   * of the <b>imageMode()</b> fuction, either CORNER, CORNERS, or CENTER. 
+   *
+   * ( end auto-generated )
+   *
+   * @webref rendering
+   * @param a x-coordinate of the rectangle, by default
+   * @param b y-coordinate of the rectangle, by default
+   * @param c width of the rectangle, by default
+   * @param d height of the rectangle, by default
    */
   public void clip(float a, float b, float c, float d) {
     if (imageMode == CORNER) {
@@ -1814,8 +2010,14 @@ public class PGraphics extends PImage implements PConstants {
     showMissingWarning("clip");
   }
 
-  /*
-   * @webref rendering:shaders
+  /**
+   * ( begin auto-generated from noClip.xml )
+   *
+   * Disables the clipping previously started by the <b>clip()</b> function.
+   *
+   * ( end auto-generated )
+   *
+   * @webref rendering
    */
   public void noClip() {
     showMissingWarning("noClip");
@@ -1834,7 +2036,7 @@ public class PGraphics extends PImage implements PConstants {
    *
    * ( end auto-generated )
    *
-   * @webref Rendering
+   * @webref rendering
    * @param mode the blending mode to use
    */
   public void blendMode(int mode) {
@@ -1867,7 +2069,7 @@ public class PGraphics extends PImage implements PConstants {
                                  "must be used before bezierVertex() or quadraticVertex()");
     }
     if (vertexCount == 0) {
-      throw new RuntimeException("vertex() must be used at least once" +
+      throw new RuntimeException("vertex() must be used at least once " +
                                  "before bezierVertex() or quadraticVertex()");
     }
   }
@@ -1898,6 +2100,7 @@ public class PGraphics extends PImage implements PConstants {
       vertex(x1, y1);
     }
   }
+
 
 /**
    * ( begin auto-generated from bezierVertex.xml )
@@ -1961,6 +2164,7 @@ public class PGraphics extends PImage implements PConstants {
     }
   }
 
+
   /**
    * @webref shape:vertex
    * @param cx the x-coordinate of the control point
@@ -1983,6 +2187,7 @@ public class PGraphics extends PImage implements PConstants {
                  x3, y3);
   }
 
+
   /**
    * @param cz the z-coordinate of the control point
    * @param z3 the z-coordinate of the anchor point
@@ -1999,9 +2204,11 @@ public class PGraphics extends PImage implements PConstants {
                  x3, y3, z3);
   }
 
+
   protected void curveVertexCheck() {
     curveVertexCheck(shape);
   }
+
 
   /**
    * Perform initialization specific to curveVertex(), and handle standard
@@ -2025,6 +2232,7 @@ public class PGraphics extends PImage implements PConstants {
     }
     curveInitCheck();
   }
+
 
  /**
    * ( begin auto-generated from curveVertex.xml )
@@ -2664,8 +2872,8 @@ public class PGraphics extends PImage implements PConstants {
         }
 
         if (stop - start > TWO_PI) {
-          start = 0;
-          stop = TWO_PI;
+          // don't change start, it is visible in PIE mode
+          stop = start + TWO_PI;
         }
         arcImpl(x, y, w, h, start, stop, mode);
       }
@@ -3440,50 +3648,35 @@ public class PGraphics extends PImage implements PConstants {
   // SMOOTHING
 
 
-  /**
-   * If true in PImage, use bilinear interpolation for copy()
-   * operations. When inherited by PGraphics, also controls shapes.
-   */
-
-  /**
-   * ( begin auto-generated from smooth.xml )
-   *
-   * Draws all geometry with smooth (anti-aliased) edges. This will sometimes
-   * slow down the frame rate of the application, but will enhance the visual
-   * refinement. Note that <b>smooth()</b> will also improve image quality of
-   * resized images, and <b>noSmooth()</b> will disable image (and font)
-   * smoothing altogether.
-   *
-   * ( end auto-generated )
-   *
-   * @webref shape:attributes
-   * @see PGraphics#noSmooth()
-   * @see PGraphics#hint(int)
-   * @see PApplet#size(int, int, String)
-   */
-  public void smooth() {
-    smooth = true;
+  public void smooth() {  // ignore
+    smooth(1);
   }
 
-  /**
-   *
-   * @param level either 2, 4, or 8
-   */
-  public void smooth(int level) {
-    smooth = true;
+
+  public void smooth(int quality) {  // ignore
+    if (primaryGraphics) {
+      parent.smooth(quality);
+    } else {
+      // for createGraphics(), make sure beginDraw() not called yet
+      if (settingsInited) {
+        // ignore if it's just a repeat of the current state
+        if (this.smooth != quality) {
+          smoothWarning("smooth");
+        }
+      } else {
+        this.smooth = quality;
+      }
+    }
   }
 
-  /**
-   * ( begin auto-generated from noSmooth.xml )
-   *
-   * Draws all geometry with jagged (aliased) edges.
-   *
-   * ( end auto-generated )
-   * @webref shape:attributes
-   * @see PGraphics#smooth()
-   */
-  public void noSmooth() {
-    smooth = false;
+
+  public void noSmooth() {  // ignore
+    smooth(0);
+  }
+
+
+  private void smoothWarning(String method) {
+    PGraphics.showWarning("%s() can only be used before beginDraw()", method);
   }
 
 
@@ -3857,6 +4050,39 @@ public class PGraphics extends PImage implements PConstants {
   // TEXT/FONTS
 
 
+  protected PFont createFont(String name, float size,
+                          boolean smooth, char[] charset) {
+    String lowerName = name.toLowerCase();
+    Font baseFont = null;
+
+    try {
+      InputStream stream = null;
+      if (lowerName.endsWith(".otf") || lowerName.endsWith(".ttf")) {
+        stream = parent.createInput(name);
+        if (stream == null) {
+          System.err.println("The font \"" + name + "\" " +
+                                 "is missing or inaccessible, make sure " +
+                                 "the URL is valid or that the file has been " +
+                                 "added to your sketch and is readable.");
+          return null;
+        }
+        baseFont = Font.createFont(Font.TRUETYPE_FONT, parent.createInput(name));
+
+      } else {
+        baseFont = PFont.findFont(name);
+      }
+      return new PFont(baseFont.deriveFont(size * parent.pixelDensity),
+                       smooth, charset, stream != null,
+                       parent.pixelDensity);
+
+    } catch (Exception e) {
+      System.err.println("Problem with createFont(\"" + name + "\")");
+      e.printStackTrace();
+      return null;
+    }
+  }
+
+
   public void textAlign(int alignX) {
     textAlign(alignX, BASELINE);
   }
@@ -3898,6 +4124,9 @@ public class PGraphics extends PImage implements PConstants {
    * @see PApplet#loadFont(String)
    * @see PFont
    * @see PGraphics#text(String, float, float)
+   * @see PGraphics#textSize(float)
+   * @see PGraphics#textAscent()
+   * @see PGraphics#textDescent()
    */
   public void textAlign(int alignX, int alignY) {
     textAlign = alignX;
@@ -3974,10 +4203,46 @@ public class PGraphics extends PImage implements PConstants {
    * @see PApplet#loadFont(String)
    * @see PFont
    * @see PGraphics#text(String, float, float)
+   * @see PGraphics#textSize(float)
    */
   public void textFont(PFont which) {
-    if (which != null) {
-      textFont = which;
+    if (which == null) {
+      throw new RuntimeException(ERROR_TEXTFONT_NULL_PFONT);
+    }
+    textFontImpl(which, which.getDefaultSize());
+  }
+
+
+  /**
+   * @param size the size of the letters in units of pixels
+   */
+  public void textFont(PFont which, float size) {
+    if (which == null) {
+      throw new RuntimeException(ERROR_TEXTFONT_NULL_PFONT);
+    }
+    // https://github.com/processing/processing/issues/3110
+    if (size <= 0) {
+      // Using System.err instead of showWarning to avoid running out of
+      // memory with a bunch of textSize() variants (cause of this bug is
+      // usually something done with map() or in a loop).
+      System.err.println("textFont: ignoring size " + size + " px:" +
+                             "the text size must be larger than zero");
+      size = textSize;
+    }
+    textFontImpl(which, size);
+  }
+
+
+  /**
+   * Called from textFont. Check the validity of args and
+   * print possible errors to the user before calling this.
+   * Subclasses will want to override this one.
+   *
+   * @param which font to set, not null
+   * @param size size to set, greater than zero
+   */
+  protected void textFontImpl(PFont which, float size) {
+    textFont = which;
 //      if (hints[ENABLE_NATIVE_FONTS]) {
 //        //if (which.font == null) {
 //        which.findNative();
@@ -4006,20 +4271,8 @@ public class PGraphics extends PImage implements PConstants {
         // float w = font.getStringBounds(text, g2.getFontRenderContext()).getWidth();
       }
       */
-      textSize(which.size);
 
-    } else {
-      throw new RuntimeException(ERROR_TEXTFONT_NULL_PFONT);
-    }
-  }
-
-
-  /**
-   * @param size the size of the letters in units of pixels
-   */
-  public void textFont(PFont which, float size) {
-    textFont(which);
-    textSize(size);
+    handleTextSize(size);
   }
 
 
@@ -4037,6 +4290,7 @@ public class PGraphics extends PImage implements PConstants {
    * @see PFont#PFont
    * @see PGraphics#text(String, float, float)
    * @see PGraphics#textFont(PFont)
+   * @see PGraphics#textSize(float)
    */
   public void textLeading(float leading) {
     textLeading = leading;
@@ -4120,9 +4374,38 @@ public class PGraphics extends PImage implements PConstants {
    * @see PGraphics#textFont(PFont)
    */
   public void textSize(float size) {
+    // https://github.com/processing/processing/issues/3110
+    if (size <= 0) {
+      // Using System.err instead of showWarning to avoid running out of
+      // memory with a bunch of textSize() variants (cause of this bug is
+      // usually something done with map() or in a loop).
+      System.err.println("textSize(" + size + ") ignored: " +
+                         "the text size must be larger than zero");
+      return;
+    }
     if (textFont == null) {
       defaultFontOrDeath("textSize", size);
     }
+    textSizeImpl(size);
+  }
+
+
+  /**
+   * Called from textSize() after validating size. Subclasses
+   * will want to override this one.
+   * @param size size of the text, greater than zero
+   */
+  protected void textSizeImpl(float size) {
+    handleTextSize(size);
+  }
+
+
+  /**
+   * Sets the actual size. Called from textSizeImpl and
+   * from textFontImpl after setting the font.
+   * @param size size of the text, greater than zero
+   */
+  protected void handleTextSize(float size) {
     textSize = size;
     textLeading = (textAscent() + textDescent()) * 1.275f;
   }
@@ -4153,6 +4436,7 @@ public class PGraphics extends PImage implements PConstants {
    * @see PFont#PFont
    * @see PGraphics#text(String, float, float)
    * @see PGraphics#textFont(PFont)
+   * @see PGraphics#textSize(float)
    */
   public float textWidth(String str) {
     if (textFont == null) {
@@ -4237,6 +4521,10 @@ public class PGraphics extends PImage implements PConstants {
    * @see PGraphics#textFont(PFont)
    * @see PGraphics#textMode(int)
    * @see PGraphics#textSize(float)
+   * @see PGraphics#textLeading(float)
+   * @see PGraphics#textWidth(String)
+   * @see PGraphics#textAscent()
+   * @see PGraphics#textDescent()
    * @see PGraphics#rectMode(int)
    * @see PGraphics#fill(int, float)
    * @see_external String
@@ -4397,7 +4685,7 @@ public class PGraphics extends PImage implements PConstants {
    * ignored.
    *
    * @param x1 by default, the x-coordinate of text, see rectMode() for more info
-   * @param y1 by default, the x-coordinate of text, see rectMode() for more info
+   * @param y1 by default, the y-coordinate of text, see rectMode() for more info
    * @param x2 by default, the width of the text box, see rectMode() for more info
    * @param y2 by default, the height of the text box, see rectMode() for more info
    */
@@ -4518,6 +4806,7 @@ public class PGraphics extends PImage implements PConstants {
   /**
    * Emit a sentence of text, defined as a chunk of text without any newlines.
    * @param stop non-inclusive, the end of the text in question
+   * @return false if cannot fit
    */
   protected boolean textSentence(char[] buffer, int start, int stop,
                                  float boxWidth, float spaceWidth) {
@@ -4531,15 +4820,19 @@ public class PGraphics extends PImage implements PConstants {
     while (index <= stop) {
       // boundary of a word or end of this sentence
       if ((buffer[index] == ' ') || (index == stop)) {
-        float wordWidth = textWidthImpl(buffer, wordStart, index);
+//        System.out.println((index == stop) + " " + wordStart + " " + index);
+        float wordWidth = 0;
+        if (index > wordStart) {
+          // we have a non-empty word, measure it
+          wordWidth = textWidthImpl(buffer, wordStart, index);
+        }
 
-        if (runningX + wordWidth > boxWidth) {
+        if (runningX + wordWidth >= boxWidth) {
           if (runningX != 0) {
             // Next word is too big, output the current line and advance
             index = wordStart;
             textSentenceBreak(lineStart, index);
-            // Eat whitespace because multiple spaces don't count for s*
-            // when they're at the end of a line.
+            // Eat whitespace before the first word on the next line.
             while ((index < stop) && (buffer[index] == ' ')) {
               index++;
             }
@@ -4547,15 +4840,34 @@ public class PGraphics extends PImage implements PConstants {
             // If this is the first word on the line, and its width is greater
             // than the width of the text box, then break the word where at the
             // max width, and send the rest of the word to the next line.
-            do {
+            if (index - wordStart < 25) {
+              do {
+                index--;
+                if (index == wordStart) {
+                  // Not a single char will fit on this line. screw 'em.
+                  return false;
+                }
+                wordWidth = textWidthImpl(buffer, wordStart, index);
+              } while (wordWidth > boxWidth);
+            } else {
+              // This word is more than 25 characters long, might be faster to
+              // start from the beginning of the text rather than shaving from
+              // the end of it, which is super slow if it's 1000s of letters.
+              // https://github.com/processing/processing/issues/211
+              int lastIndex = index;
+              index = wordStart + 1;
+              // walk to the right while things fit
+              while ((wordWidth = textWidthImpl(buffer, wordStart, index)) < boxWidth) {
+                index++;
+                if (index > lastIndex) {  // Unreachable?
+                  break;
+                }
+              }
               index--;
               if (index == wordStart) {
-                // Not a single char will fit on this line. screw 'em.
-                //System.out.println("screw you");
-                return false; //Float.NaN;
+                return false;  // nothing fits
               }
-              wordWidth = textWidthImpl(buffer, wordStart, index);
-            } while (wordWidth > boxWidth);
+            }
 
             //textLineImpl(buffer, lineStart, index, x, y);
             textSentenceBreak(lineStart, index);
@@ -4572,8 +4884,8 @@ public class PGraphics extends PImage implements PConstants {
           index++;
 
         } else {  // this word will fit, just add it to the line
-          runningX += wordWidth + spaceWidth;
-          wordStart = index + 1;  // move on to the next word
+          runningX += wordWidth;
+          wordStart = index ;  // move on to the next word including the space before the word
           index++;
         }
       } else {  // not a space or the last character
@@ -4681,10 +4993,10 @@ public class PGraphics extends PImage implements PConstants {
     PFont.Glyph glyph = textFont.getGlyph(ch);
     if (glyph != null) {
       if (textMode == MODEL) {
-        float high    = glyph.height     / (float) textFont.size;
-        float bwidth  = glyph.width      / (float) textFont.size;
-        float lextent = glyph.leftExtent / (float) textFont.size;
-        float textent = glyph.topExtent  / (float) textFont.size;
+        float high    = glyph.height     / (float) textFont.getSize();
+        float bwidth  = glyph.width      / (float) textFont.getSize();
+        float lextent = glyph.leftExtent / (float) textFont.getSize();
+        float textent = glyph.topExtent  / (float) textFont.getSize();
 
         float x1 = x + lextent * textSize;
         float y1 = y - textent * textSize;
@@ -4733,6 +5045,7 @@ public class PGraphics extends PImage implements PConstants {
   }
 
 
+  /*
   protected void textCharScreenImpl(PImage glyph,
                                     int xx, int yy,
                                     int w0, int h0) {
@@ -4783,6 +5096,30 @@ public class PGraphics extends PImage implements PConstants {
       }
     }
   }
+  */
+
+
+//  /**
+//   * Convenience method to get a legit FontMetrics object. Where possible,
+//   * override this any renderer subclass so that you're not using what's
+//   * returned by getDefaultToolkit() to get your metrics.
+//   */
+//  @SuppressWarnings("deprecation")
+//  public FontMetrics getFontMetrics(Font font) {  // ignore
+//    Frame frame = parent.frame;
+//    if (frame != null) {
+//      return frame.getToolkit().getFontMetrics(font);
+//    }
+//    return Toolkit.getDefaultToolkit().getFontMetrics(font);
+//  }
+//
+//
+//  /**
+//   * Convenience method to jump through some Java2D hoops and get an FRC.
+//   */
+//  public FontRenderContext getFontRenderContext(Font font) {  // ignore
+//    return getFontMetrics(font).getFontRenderContext();
+//  }
 
 
 
@@ -5026,6 +5363,7 @@ public class PGraphics extends PImage implements PConstants {
   /**
    * <h3>Advanced</h3>
    * Rotate about a vector in space. Same as the glRotatef() function.
+   * @nowebref
    * @param x
    * @param y
    * @param z
@@ -6973,7 +7311,9 @@ public class PGraphics extends PImage implements PConstants {
     backgroundR = calcR;
     backgroundG = calcG;
     backgroundB = calcB;
-    backgroundA = (format == RGB) ? colorModeA : calcA;
+    //backgroundA = (format == RGB) ? colorModeA : calcA;
+    // If drawing surface is opaque, this maxes out at 1.0. [fry 150513]
+    backgroundA = (format == RGB) ? 1 : calcA;
     backgroundRi = calcRi;
     backgroundGi = calcGi;
     backgroundBi = calcBi;
@@ -7641,7 +7981,7 @@ public class PGraphics extends PImage implements PConstants {
    * @see PGraphics#color(float, float, float, float)
    * @see PApplet#lerp(float, float, float)
    */
-  public int lerpColor(int c1, int c2, float amt) {
+  public int lerpColor(int c1, int c2, float amt) {  // ignore
     return lerpColor(c1, c2, amt, colorMode);
   }
 
@@ -7667,10 +8007,10 @@ public class PGraphics extends PImage implements PConstants {
       float g2 = (c2 >> 8) & 0xff;
       float b2 = c2 & 0xff;
 
-      return (((int) (a1 + (a2-a1)*amt) << 24) |
-              ((int) (r1 + (r2-r1)*amt) << 16) |
-              ((int) (g1 + (g2-g1)*amt) << 8) |
-              ((int) (b1 + (b2-b1)*amt)));
+      return ((PApplet.round(a1 + (a2-a1)*amt) << 24) |
+              (PApplet.round(r1 + (r2-r1)*amt) << 16) |
+              (PApplet.round(g1 + (g2-g1)*amt) << 8) |
+              (PApplet.round(b1 + (b2-b1)*amt)));
 
     } else if (mode == HSB) {
       if (lerpColorHSB1 == null) {
@@ -7680,7 +8020,7 @@ public class PGraphics extends PImage implements PConstants {
 
       float a1 = (c1 >> 24) & 0xff;
       float a2 = (c2 >> 24) & 0xff;
-      int alfa = ((int) (a1 + (a2-a1)*amt)) << 24;
+      int alfa = (PApplet.round(a1 + (a2-a1)*amt)) << 24;
 
       Color.RGBtoHSB((c1 >> 16) & 0xff, (c1 >> 8) & 0xff, c1 & 0xff,
                      lerpColorHSB1);
@@ -7766,7 +8106,7 @@ public class PGraphics extends PImage implements PConstants {
   // WARNINGS and EXCEPTIONS
 
 
-  static protected HashMap<String, Object> warnings;
+  static protected Map<String, Object> warnings;
 
 
   /**
@@ -7798,7 +8138,7 @@ public class PGraphics extends PImage implements PConstants {
    */
   static public void showDepthWarning(String method) {
     showWarning(method + "() can only be used with a renderer that " +
-                "supports 3D, such as P3D or OPENGL.");
+                "supports 3D, such as P3D.");
   }
 
 
@@ -7810,7 +8150,7 @@ public class PGraphics extends PImage implements PConstants {
   static public void showDepthWarningXYZ(String method) {
     showWarning(method + "() with x, y, and z coordinates " +
                 "can only be used with a renderer that " +
-                "supports 3D, such as P3D or OPENGL. " +
+                "supports 3D, such as P3D. " +
                 "Use a version without a z-coordinate instead.");
   }
 
@@ -7890,7 +8230,7 @@ public class PGraphics extends PImage implements PConstants {
    * A better name? showFrame, displayable, isVisible, visible, shouldDisplay,
    * what to call this?
    */
-  public boolean displayable() {
+  public boolean displayable() {  // ignore
     return true;
   }
 
@@ -7898,7 +8238,7 @@ public class PGraphics extends PImage implements PConstants {
   /**
    * Return true if this renderer supports 2D drawing. Defaults to true.
    */
-  public boolean is2D() {
+  public boolean is2D() {  // ignore
     return true;
   }
 
@@ -7906,7 +8246,7 @@ public class PGraphics extends PImage implements PConstants {
   /**
    * Return true if this renderer supports 3D drawing. Defaults to false.
    */
-  public boolean is3D() {
+  public boolean is3D() {  // ignore
     return false;
   }
 
@@ -7914,7 +8254,166 @@ public class PGraphics extends PImage implements PConstants {
   /**
    * Return true if this renderer does rendering through OpenGL. Defaults to false.
    */
-  public boolean isGL() {
+  public boolean isGL() {  // ignore
     return false;
   }
+
+
+  public boolean is2X() {
+    return pixelDensity == 2;
+  }
+
+
+  //////////////////////////////////////////////////////////////
+
+  // ASYNC IMAGE SAVING
+
+
+  @Override
+  public boolean save(String filename) { // ignore
+
+    if (hints[DISABLE_ASYNC_SAVEFRAME]) {
+      return super.save(filename);
+    }
+
+    if (asyncImageSaver == null) {
+      asyncImageSaver = new AsyncImageSaver();
+    }
+
+    if (!loaded) loadPixels();
+    PImage target = asyncImageSaver.getAvailableTarget(pixelWidth, pixelHeight,
+                                                       format);
+    if (target == null) return false;
+    int count = PApplet.min(pixels.length, target.pixels.length);
+    System.arraycopy(pixels, 0, target.pixels, 0, count);
+    asyncImageSaver.saveTargetAsync(this, target, filename);
+
+    return true;
+  }
+
+  protected void processImageBeforeAsyncSave(PImage image) { }
+
+
+  protected static AsyncImageSaver asyncImageSaver;
+
+  protected static class AsyncImageSaver {
+
+    static final int TARGET_COUNT =
+        Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
+
+    BlockingQueue<PImage> targetPool = new ArrayBlockingQueue<>(TARGET_COUNT);
+    ExecutorService saveExecutor = Executors.newFixedThreadPool(TARGET_COUNT);
+
+    int targetsCreated = 0;
+
+
+    static final int TIME_AVG_FACTOR = 32;
+
+    volatile long avgNanos = 0;
+    long lastTime = 0;
+    int lastFrameCount = 0;
+
+
+    public AsyncImageSaver() { } // ignore
+
+
+    public void dispose() { // ignore
+      saveExecutor.shutdown();
+      try {
+        saveExecutor.awaitTermination(5000, TimeUnit.SECONDS);
+      } catch (InterruptedException e) { }
+    }
+
+
+    public boolean hasAvailableTarget() { // ignore
+      return targetsCreated < TARGET_COUNT || targetPool.isEmpty();
+    }
+
+
+    /**
+     * After taking a target, you must call saveTargetAsync() or
+     * returnUnusedTarget(), otherwise one thread won't be able to run
+     */
+    public PImage getAvailableTarget(int requestedWidth, int requestedHeight, // ignore
+                                     int format) {
+      try {
+        PImage target;
+        if (targetsCreated < TARGET_COUNT && targetPool.isEmpty()) {
+          target = new PImage(requestedWidth, requestedHeight);
+          targetsCreated++;
+        } else {
+          target = targetPool.take();
+          if (target.width != requestedWidth ||
+              target.height != requestedHeight) {
+            target.width = requestedWidth;
+            target.height = requestedHeight;
+            // TODO: this kills performance when saving different sizes
+            target.pixels = new int[requestedWidth * requestedHeight];
+          }
+        }
+        target.format = format;
+        return target;
+      } catch (InterruptedException e) {
+        return null;
+      }
+    }
+
+
+    public void returnUnusedTarget(PImage target) { // ignore
+      targetPool.offer(target);
+    }
+
+
+    public void saveTargetAsync(final PGraphics renderer, final PImage target, // ignore
+                                final String filename) {
+      target.parent = renderer.parent;
+
+      // if running every frame, smooth the framerate
+      if (target.parent.frameCount - 1 == lastFrameCount && TARGET_COUNT > 1) {
+
+        // count with one less thread to reduce jitter
+        // 2 cores - 1 save thread - no wait
+        // 4 cores - 3 save threads - wait 1/2 of save time
+        // 8 cores - 7 save threads - wait 1/6 of save time
+        long avgTimePerFrame = avgNanos / (Math.max(1, TARGET_COUNT - 1));
+        long now = System.nanoTime();
+        long delay = PApplet.round((lastTime + avgTimePerFrame - now) / 1e6f);
+        try {
+          if (delay > 0) Thread.sleep(delay);
+        } catch (InterruptedException e) { }
+      }
+
+      lastFrameCount = target.parent.frameCount;
+      lastTime = System.nanoTime();
+
+      try {
+        saveExecutor.submit(new Runnable() {
+          @Override
+          public void run() { // ignore
+            try {
+              long startTime = System.nanoTime();
+              renderer.processImageBeforeAsyncSave(target);
+              target.save(filename);
+              long saveNanos = System.nanoTime() - startTime;
+              synchronized (AsyncImageSaver.this) {
+                if (avgNanos == 0) {
+                  avgNanos = saveNanos;
+                } else if (saveNanos < avgNanos) {
+                  avgNanos = (avgNanos * (TIME_AVG_FACTOR - 1) + saveNanos) /
+                      (TIME_AVG_FACTOR);
+                } else {
+                  avgNanos = saveNanos;
+                }
+              }
+            } finally {
+              targetPool.offer(target);
+            }
+          }
+        });
+      } catch (RejectedExecutionException e) {
+        // the executor service was probably shut down, no more saving for us
+      }
+    }
+  }
+
 }

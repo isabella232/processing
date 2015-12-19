@@ -1,3 +1,6 @@
+# THE TEXT BELOW IS HAND WRITTEN AND FOUND IN THE FILE "keywords_base.txt"
+# IN THE PROCESSING-DOCS REPO. DON'T EDITS THE keywords.txt FILE DIRECTLY.
+
 # For an explanation of these tags, see Token.java 
 # trunk/processing/app/src/processing/app/syntax/Token.java
 
@@ -80,6 +83,7 @@ ERODE	LITERAL2	filter_
 ESC	LITERAL2	keyCode
 EXCLUSION	LITERAL2	blend_
 EXIT LITERAL2
+FX2D	LITERAL2	size_
 GIF	LITERAL2
 GRAY	LITERAL2	filter_
 GREEN_MASK	LITERAL2
@@ -92,6 +96,7 @@ HINT_COUNT	LITERAL2
 HSB	LITERAL2	colorMode_
 IMAGE	LITERAL2	textureMode_
 INVERT	LITERAL2	filter_
+JAVA2D	LITERAL2	size_
 JPEG	LITERAL2	
 LEFT	LITERAL2	keyCode
 LIGHTEST	LITERAL2	blend_
@@ -149,12 +154,14 @@ ROUND	LITERAL2	strokeCap_
 SCREEN	LITERAL2	blend_
 SECAM	LITERAL2	
 SHAPE	LITERAL2	textMode_
-SHIFT	LITERAL2	
+SHIFT	LITERAL2
+SPAN	LITERAL2	fullScreen_	
 SPECULAR	LITERAL2
 SPHERE	LITERAL2	createShape_
 SOFT_LIGHT	LITERAL2	blend_
 SQUARE	LITERAL2	strokeCap_
 SUBTRACT	LITERAL2	blend_
+SVG	LITERAL2
 SVIDEO	LITERAL2	
 TAB	LITERAL2	keyCode
 TARGA	LITERAL2
@@ -180,9 +187,7 @@ WHITESPACE	LITERAL2
 # Java keywords (void, import, , etc.)
 		
 abstract	KEYWORD1
-assert	KEYWORD1
 break	KEYWORD1	break
-case	KEYWORD1	case
 class	KEYWORD1	class
 continue	KEYWORD1	continue
 default	KEYWORD1	default	
@@ -202,17 +207,23 @@ package	KEYWORD1
 private	KEYWORD1	private
 protected	KEYWORD1	
 public	KEYWORD1	public
-return	KEYWORD1	return	
 static	KEYWORD1	static
-strictfp	KEYWORD1
-super	KEYWORD1	super
-this	KEYWORD1	this
-throw	KEYWORD1	
+strictfp	KEYWORD1	
 throws	KEYWORD1	
 transient	KEYWORD1
 true	KEYWORD1	true
 void	KEYWORD1	void
 volatile	KEYWORD1
+
+
+# Java keywords which can be followed by a parenthesis
+
+assert	KEYWORD6
+case	KEYWORD6	case
+return	KEYWORD6	return	
+super	KEYWORD6	super
+this	KEYWORD6	this
+throw	KEYWORD6
 
 
 # Datatypes
@@ -231,6 +242,7 @@ HashMap	KEYWORD5	HashMap
 PrintWriter	KEYWORD5	PrintWriter
 String	KEYWORD5	String
 StringBuffer	KEYWORD5	
+StringBuilder	KEYWORD5
 Thread	KEYWORD5
 boolean	KEYWORD5	boolean
 byte	KEYWORD5	byte
@@ -307,9 +319,8 @@ length	KEYWORD2	String
 
 
 # Temporary additions 3 September 2012 as the reference is getting updated
-
-end	FUNCTION1
-addChild	FUNCTION1
+#end	FUNCTION1
+#addChild	FUNCTION1
 
 # Operators are without KEYWORDS
 
@@ -358,12 +369,19 @@ PVector	FUNCTION1	PVector
 ArrayList	FUNCTION1	ArrayList
 HashMap	FUNCTION1	HashMap
 
+# pixelHeight is not generating correctly: https://github.com/processing/processing-docs/issues/260
 
-# THE TEXT ABOVE IS HAND-WRITTEN AND FOUND IN THE FILE "keywords_base.txt"
+pixelHeight	KEYWORD4	pixelHeight
+
+
+# THE TEXT ABOVE IS HAND-WRITTEN AND FOUND IN THE FILE "keywords_base.txt" in processing/processing-docs/generate
+#
 # THE TEXT BELOW IS AUTO-GENERATED
 #
-# SO DON'T 
-# TOUCH IT
+# SO 
+# DON'T 
+# TOUCH 
+# IT
 
 
 abs	FUNCTION1	abs_
@@ -424,6 +442,7 @@ curveVertex	FUNCTION1	curveVertex_
 day	FUNCTION1	day_
 degrees	FUNCTION1	degrees_
 directionalLight	FUNCTION1	directionalLight_
+displayDensity	FUNCTION1	displayDensity_
 displayHeight	KEYWORD4	displayHeight
 displayWidth	KEYWORD4	displayWidth
 dist	FUNCTION1	dist_
@@ -485,6 +504,7 @@ frameCount	KEYWORD4	frameCount
 frameRate	KEYWORD4	frameRate
 frameRate	FUNCTION1	frameRate_
 frustum	FUNCTION1	frustum_
+fullScreen	FUNCTION1	fullScreen_
 get	FUNCTION1	get_
 green	FUNCTION1	green_
 HALF_PI	LITERAL2	HALF_PI
@@ -549,8 +569,8 @@ remove	FUNCTION2	JSONArray_remove_
 setBoolean	FUNCTION2	JSONArray_setBoolean_
 setFloat	FUNCTION2	JSONArray_setFloat_
 setInt	FUNCTION2	JSONArray_setInt_
-getJSONArray	FUNCTION2	JSONArray_setJSONArray_
-getJSONObject	FUNCTION2	JSONArray_setJSONObject_
+setJSONArray	FUNCTION2	JSONArray_setJSONArray_
+setJSONObject	FUNCTION2	JSONArray_setJSONObject_
 setString	FUNCTION2	JSONArray_setString_
 size	FUNCTION2	JSONArray_size_
 JSONObject	KEYWORD5	JSONObject
@@ -572,6 +592,7 @@ keyPressed	FUNCTION4	keyPressed
 keyPressed	KEYWORD4	keyPressed
 keyReleased	FUNCTION4	keyReleased
 keyTyped	FUNCTION4	keyTyped
+launch	FUNCTION1	launch_
 lerp	FUNCTION1	lerp_
 lerpColor	FUNCTION1	lerpColor_
 lightFalloff	FUNCTION1	lightFalloff_
@@ -609,7 +630,7 @@ mouseDragged	FUNCTION4	mouseDragged
 mouseMoved	FUNCTION4	mouseMoved
 mousePressed	FUNCTION4	mousePressed
 mousePressed	KEYWORD4	mousePressed
-mouseReleased	FUNCTION1	mouseReleased_
+mouseReleased	FUNCTION4	mouseReleased
 mouseWheel	FUNCTION4	mouseWheel
 mouseX	KEYWORD4	mouseX
 mouseY	KEYWORD4	mouseY
@@ -630,8 +651,9 @@ normal	FUNCTION1	normal_
 noSmooth	FUNCTION1	noSmooth_
 noStroke	FUNCTION1	noStroke_
 noTint	FUNCTION1	noTint_
-open	FUNCTION1	open_
 ortho	FUNCTION1	ortho_
+parseJSONArray	FUNCTION1	parseJSONArray_
+parseJSONObject	FUNCTION1	parseJSONObject_
 parseXML	FUNCTION1	parseXML_
 perspective	FUNCTION1	perspective_
 PFont	KEYWORD5	PFont
@@ -652,7 +674,10 @@ resize	FUNCTION2	PImage_resize_
 save	FUNCTION2	PImage_save_
 set	FUNCTION2	PImage_set_
 updatePixels	FUNCTION2	PImage_updatePixels_
+pixelDensity	FUNCTION1	pixelDensity_
+pixelHeight	FUNCTION1	pixelHeight_
 pixels	KEYWORD4	pixels
+pixelWidth	KEYWORD4	pixelWidth
 pmouseX	KEYWORD4	pmouseX
 pmouseY	KEYWORD4	pmouseY
 point	FUNCTION1	point_
@@ -687,6 +712,8 @@ rotateX	FUNCTION2	PShape_rotateX_
 rotateY	FUNCTION2	PShape_rotateY_
 rotateZ	FUNCTION2	PShape_rotateZ_
 scale	FUNCTION2	PShape_scale_
+setFill	FUNCTION2	PShape_setFill_
+setStroke	FUNCTION2	PShape_setStroke_
 setVertex	FUNCTION2	PShape_setVertex_
 setVisible	FUNCTION2	PShape_setVisible_
 translate	FUNCTION2	PShape_translate_
@@ -744,7 +771,7 @@ saveJSONArray	FUNCTION1	saveJSONArray_
 saveJSONObject	FUNCTION1	saveJSONObject_
 saveStream	FUNCTION1	saveStream_
 saveStrings	FUNCTION1	saveStrings_
-loadTable	FUNCTION1	saveTable_
+saveTable	FUNCTION1	saveTable_
 saveXML	FUNCTION1	saveXML_
 scale	FUNCTION1	scale_
 screenX	FUNCTION1	screenX_
@@ -755,6 +782,7 @@ selectFolder	FUNCTION1	selectFolder_
 selectInput	FUNCTION1	selectInput_
 selectOutput	FUNCTION1	selectOutput_
 set	FUNCTION1	set_
+settings	FUNCTION4	settings
 setup	FUNCTION4	setup
 shader	FUNCTION1	shader_
 shape	FUNCTION1	shape_
@@ -836,7 +864,7 @@ setString	FUNCTION2	Table_setString_
 trim	FUNCTION2	Table_trim_
 TableRow	KEYWORD5	TableRow
 getFloat	FUNCTION2	TableRow_getFloat_
-getFloat	FUNCTION2	TableRow_getInt_
+getInt	FUNCTION2	TableRow_getInt_
 getString	FUNCTION2	TableRow_getString_
 setFloat	FUNCTION2	TableRow_setFloat_
 setInt	FUNCTION2	TableRow_setInt_
@@ -855,6 +883,7 @@ texture	FUNCTION1	texture_
 textureMode	FUNCTION1	textureMode_
 textureWrap	FUNCTION1	textureWrap_
 textWidth	FUNCTION1	textWidth_
+thread	FUNCTION1	thread_
 tint	FUNCTION1	tint_
 translate	FUNCTION1	translate_
 triangle	FUNCTION1	triangle_

@@ -26,6 +26,7 @@ package processing.app;
 
 import java.io.*;
 
+import javax.swing.text.BadLocationException;
 import javax.swing.text.Document;
 import javax.swing.undo.*;
 
@@ -54,6 +55,9 @@ public class SketchCode {
 
   /** Last time this tab was visited */
   long visited;
+
+  /** The last time this tab was saved to disk */
+  private long lastModified;
 
   /**
    * Undo Manager for this tab, each tab keeps track of their own
@@ -133,7 +137,7 @@ public class SketchCode {
 
 
   public void copyTo(File dest) throws IOException {
-    Base.saveFile(program, dest);
+    Util.saveFile(program, dest);
   }
 
 
@@ -176,7 +180,7 @@ public class SketchCode {
 
 
   public int getLineCount() {
-    return Base.countLines(program);
+    return Util.countLines(program);
   }
 
 
@@ -217,6 +221,11 @@ public class SketchCode {
 
   public Document getDocument() {
     return document;
+  }
+
+
+  public String getDocumentText() throws BadLocationException {
+    return document.getText(0, document.getLength());
   }
 
 
@@ -272,7 +281,7 @@ public class SketchCode {
    * Load this piece of code from a file.
    */
   public void load() throws IOException {
-    program = Base.loadFile(file);
+    program = Util.loadFile(file);
 
     // Remove NUL characters because they'll cause problems,
     // and their presence is very difficult to debug.
@@ -293,6 +302,7 @@ public class SketchCode {
       System.err.println();
     }
 
+    setLastModified();
     setModified(false);
   }
 
@@ -305,8 +315,9 @@ public class SketchCode {
     // TODO re-enable history
     //history.record(s, SketchHistory.SAVE);
 
-    Base.saveFile(program, file);
+    Util.saveFile(program, file);
     savedProgram = program;
+    lastModified = file.lastModified();
     setModified(false);
   }
 
@@ -315,10 +326,11 @@ public class SketchCode {
    * Save this file to another location, used by Sketch.saveAs()
    */
   public void saveAs(File newFile) throws IOException {
-    Base.saveFile(program, newFile);
+    Util.saveFile(program, newFile);
     savedProgram = program;
     file = newFile;
     makePrettyName();
+    setLastModified();
     setModified(false);
   }
 
@@ -329,5 +341,23 @@ public class SketchCode {
    */
   public void setFolder(File sketchFolder) {
     file = new File(sketchFolder, file.getName());
+  }
+
+
+  /**
+   * Set the last known modification time, so that we're not re-firing
+   * "hey, this is modified!" events incessantly.
+   */
+  public void setLastModified() {
+    lastModified = file.lastModified();
+  }
+
+
+  /**
+   * Used to determine whether this file was modified externally
+   * @return The time the file was last modified
+   */
+  public long getLastModified() {
+    return lastModified;
   }
 }

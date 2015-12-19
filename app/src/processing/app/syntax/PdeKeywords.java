@@ -26,14 +26,14 @@ package processing.app.syntax;
 
 import javax.swing.text.Segment;
 
-import processing.app.Editor;
+import processing.app.ui.Editor;
 
 
 public class PdeKeywords extends TokenMarker {
-  private KeywordMap keywordColoring;
+  protected KeywordMap keywordColoring;
 
-  private int lastOffset;
-  private int lastKeyword;
+  protected int lastOffset;
+  protected int lastKeyword;
 
 
   /**
@@ -50,13 +50,24 @@ public class PdeKeywords extends TokenMarker {
     int num = coloring.charAt(coloring.length() - 1) - '1';
 //    byte id = (byte) ((isKey ? Token.KEYWORD1 : Token.LITERAL1) + num);
     int id = 0;
-    boolean paren = false;
     switch (coloring.charAt(0)) {
-      case 'K': id = Token.KEYWORD1 + num; break;
-      case 'L': id = Token.LITERAL1 + num; break;
-      case 'F': id = Token.FUNCTION1 + num; paren = true; break;
+      case 'K':
+        id = Token.KEYWORD1 + num;
+        keywordColoring.add(keyword, (byte) id, false);
+        if (id == Token.KEYWORD6) {
+          // these can be followed by parens
+          keywordColoring.add(keyword, (byte) id, true);
+        }
+        break;
+      case 'L':
+        id = Token.LITERAL1 + num;
+        keywordColoring.add(keyword, (byte) id, false);
+        break;
+      case 'F':
+        id = Token.FUNCTION1 + num;
+        keywordColoring.add(keyword, (byte) id, true);
+        break;
     }
-    keywordColoring.add(keyword, (byte) id, paren);
   }
 
 
@@ -142,18 +153,7 @@ public class PdeKeywords extends TokenMarker {
         default:
           backslash = false;
           if (!Character.isLetterOrDigit(c) && c != '_') {
-            // if (i1 < mlength && array[i1]
-//            boolean paren = false;
-//            int stepper = i + 1;
-//            while (stepper < mlength) {
-//              if (array[stepper] == '(') {
-//                paren = true;
-//                break;
-//              }
-//              stepper++;
-//            }
             doKeyword(line, i, c);
-//            doKeyword(line, i, checkParen(array, i1, mlength));
           }
           break;
         }
@@ -217,36 +217,17 @@ public class PdeKeywords extends TokenMarker {
   }
 
 
-  private boolean doKeyword(Segment line, int i, char c) {
-//    return doKeyword(line, i, false);
-//  }
-//
-//
-//  //private boolean doKeyword(Segment line, int i, char c) {
-//  private boolean doKeyword(Segment line, int i, boolean paren) {
+  protected boolean doKeyword(Segment line, int i, char c) {
     int i1 = i + 1;
     int len = i - lastKeyword;
 
     boolean paren = Editor.checkParen(line.array, i, line.array.length);
-//    String s = new String(line.array, lastKeyword, len);
-//    if (s.equals("mousePressed")) {
-//      System.out.println("found mousePressed" + (paren ? "()" : ""));
-//      //new Exception().printStackTrace(System.out);
-////      System.out.println("  " + i + " " + line.count + " " +
-////        //new String(line.array, line.offset + i, line.offset + line.count - i));
-////        new String(line.array, i, line.array.length - i));
-//    }
 
     byte id = keywordColoring.lookup(line, lastKeyword, len, paren);
     if (id != Token.NULL) {
       if (lastKeyword != lastOffset) {
         addToken(lastKeyword - lastOffset, Token.NULL);
       }
-//      if (paren && id == Token.LITERAL2) {
-//        id = Token.KEYWORD2;
-//      } else if (!paren && id == Token.KEYWORD2) {
-//        id = Token.LITERAL2;
-//      }
       addToken(len, id);
       lastOffset = i;
     }

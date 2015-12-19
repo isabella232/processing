@@ -15,7 +15,7 @@
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
 
-  You should have received a copy of the GNU General Public License along 
+  You should have received a copy of the GNU General Public License along
   with this program; if not, write to the Free Software Foundation, Inc.
   59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
@@ -27,84 +27,130 @@ import java.io.IOException;
 import java.util.ArrayList;
 
 import processing.app.Base;
-import processing.app.Editor;
 import processing.app.Library;
+import processing.app.Messages;
+import processing.app.Util;
+import processing.app.ui.Editor;
 
 public enum ContributionType {
-  LIBRARY, TOOL, MODE;
+  LIBRARY, MODE, TOOL, EXAMPLES;
 
-    
+
   public String toString() {
     switch (this) {
     case LIBRARY:
       return "library";
-    case TOOL:
-      return "tool";
     case MODE:
       return "mode";
+    case TOOL:
+      return "tool";
+    case EXAMPLES:
+      return "examples";
     }
     return null;  // should be unreachable
   };
-  
-  
-  /** 
-   * Get this type name as a purtied up, capitalized version. 
-   * @return Mode for mode, Tool for tool, etc. 
+
+
+  /**
+   * Get this type name as a purtied up, capitalized version.
+   * @return Mode for mode, Tool for tool, etc.
    */
   public String getTitle() {
-    String s = toString();
-    return Character.toUpperCase(s.charAt(0)) + s.substring(1);
+    String lower = toString();
+    return Character.toUpperCase(lower.charAt(0)) + lower.substring(1);
   }
-    
-    
-  public String getFolderName() {
+
+
+  public String getPluralTitle() {
     switch (this) {
     case LIBRARY:
-      return "libraries";
-    case TOOL:
-      return "tools";
+      return "Libraries";
     case MODE:
-      return "modes";
+      return "Modes";
+    case TOOL:
+      return "Tools";
+    case EXAMPLES:
+      return "Examples";
     }
     return null;  // should be unreachable
   }
-  
-  
-  public File createTempFolder() throws IOException {
-    return Base.createTempFolder(toString(), "tmp", getSketchbookFolder());
+
+
+//  public String getFolderName() {
+//    return toString();
+//    /*
+//    switch (this) {
+//    case LIBRARY:
+//      return "libraries";
+//    case TOOL:
+//      return "tools";
+//    case MODE:
+//      return "modes";
+//    case EXAMPLES:
+//      return "examples";
+//    }
+//    return null;  // should be unreachable
+//    */
+//  }
+
+
+  /** Get the name of the properties file for this type of contribution. */
+  public String getPropertiesName() {
+    return toString() + ".properties";
   }
-  
-  
+
+
+  public File createTempFolder() throws IOException {
+    return Util.createTempFolder(toString(), "tmp", getSketchbookFolder());
+  }
+
+
+  public File[] listTempFolders() throws IOException {
+    File base = getSketchbookFolder();
+    return base.listFiles(new FileFilter() {
+      @Override
+      public boolean accept(File file) {
+        String name = file.getName();
+        return (file.isDirectory() &&
+                name.startsWith(toString()) && name.endsWith("tmp"));
+      }
+    });
+  }
+
+
   public boolean isTempFolderName(String name) {
     return name.startsWith(toString()) && name.endsWith("tmp");
   }
-  
-  
+
+
 //  public String getTempPrefix() {
 //    return toString();
 //  }
-//  
-//  
+//
+//
 //  public String getTempSuffix() {
 //    return "tmp";
 //  }
-    
-    
+
+
 //    public String getPropertiesName() {
 //      return toString() + ".properties";
 //    }
 
-    
+
   static public ContributionType fromName(String s) {
     if (s != null) {
       if ("library".equalsIgnoreCase(s)) {
         return LIBRARY;
       }
+      if ("mode".equalsIgnoreCase(s)) {
+        return MODE;
+      }
       if ("tool".equalsIgnoreCase(s)) {
         return TOOL;
       }
-      if ("mode".equalsIgnoreCase(s)) {
-        return MODE;
+      if ("examples".equalsIgnoreCase(s)) {
+        return EXAMPLES;
       }
     }
     return null;
@@ -119,14 +165,16 @@ public enum ContributionType {
       return Base.getSketchbookToolsFolder();
     case MODE:
       return Base.getSketchbookModesFolder();
+    case EXAMPLES:
+      return Base.getSketchbookExamplesFolder();
     }
     return null;
   }
 
 
   boolean isCandidate(File potential) {
-    return (potential.isDirectory() && 
-            new File(potential, toString()).exists() && 
+    return (potential.isDirectory() &&
+            new File(potential, toString()).exists() &&
             !isTempFolderName(potential.getName()));
   }
 
@@ -136,7 +184,7 @@ public enum ContributionType {
    * contribution type. For instance, a list of folders that have a 'mode'
    * subfolder if this is a ModeContribution.
    */
-  File[] listCandidates(File folder) {
+  public File[] listCandidates(File folder) {
     return folder.listFiles(new FileFilter() {
       public boolean accept(File potential) {
         return isCandidate(potential);
@@ -157,21 +205,21 @@ public enum ContributionType {
       return null;
 
     } else if (folders.length > 1) {
-      Base.log("More than one " + toString() + " found inside " + folder.getAbsolutePath());
+      Messages.log("More than one " + toString() + " found inside " + folder.getAbsolutePath());
     }
     return folders[0];
   }
-  
-  
-  /** 
+
+
+  /**
    * Returns true if the type of contribution requires the PDE to restart
-   * when being added or removed. 
+   * when being added or removed.
    */
   boolean requiresRestart() {
     return this == ContributionType.TOOL || this == ContributionType.MODE;
   }
-  
-  
+
+
   LocalContribution load(Base base, File folder) {
     switch (this) {
     case LIBRARY:
@@ -181,6 +229,8 @@ public enum ContributionType {
       return ToolContribution.load(folder);
     case MODE:
       return ModeContribution.load(base, folder);
+    case EXAMPLES:
+      return ExamplesContribution.load(folder);
     }
     return null;
   }
@@ -193,25 +243,28 @@ public enum ContributionType {
       contribs.addAll(editor.getMode().contribLibraries);
       break;
     case TOOL:
-      contribs.addAll(editor.contribTools);
+      contribs.addAll(editor.getBase().getToolContribs());
       break;
     case MODE:
       contribs.addAll(editor.getBase().getModeContribs());
       break;
+    case EXAMPLES:
+      contribs.addAll(editor.getBase().getExampleContribs());
+      break;
     }
     return contribs;
   }
-  
+
 
   File getBackupFolder() {
     return new File(getSketchbookFolder(), "old");
   }
-  
-  
+
+
   File createBackupFolder(StatusPanel status) {
-    File backupFolder = getBackupFolder(); 
+    File backupFolder = getBackupFolder();
 //    if (backupFolder.isDirectory()) {
-//      status.setErrorMessage("First remove the folder named \"old\" from the " + 
+//      status.setErrorMessage("First remove the folder named \"old\" from the " +
 //                             getFolderName() + " folder in the sketchbook.");
 //      return null;
 //    }
@@ -222,29 +275,29 @@ public enum ContributionType {
     }
     return backupFolder;
   }
-  
-  
-  /** 
-   * Create a filter for a specific contribution type.
-   * @param type The type, or null for a generic update checker.
-   */
-  ContributionFilter createFilter() {
-    return new ContributionFilter() {
-      public boolean matches(Contribution contrib) {
-        return contrib.getType() == ContributionType.this;
-      }
-    };
-  }
-  
-  
-  static ContributionFilter createUpdateFilter() {
-    return new ContributionFilter() {
-      public boolean matches(Contribution contrib) {
-        if (contrib instanceof LocalContribution) {
-          return ContributionListing.getInstance().hasUpdates(contrib);
-        }
-        return false;
-      }
-    };
-  }
+
+
+//  /**
+//   * Create a filter for a specific contribution type.
+//   * @param type The type, or null for a generic update checker.
+//   */
+//  Contribution.Filter createFilter2() {
+//    return new Contribution.Filter() {
+//      public boolean matches(Contribution contrib) {
+//        return contrib.getType() == ContributionType.this;
+//      }
+//    };
+//  }
+
+
+//  static Contribution.Filter createUpdateFilter() {
+//    return new Contribution.Filter() {
+//      public boolean matches(Contribution contrib) {
+//        if (contrib instanceof LocalContribution) {
+//          return ContributionListing.getInstance().hasUpdates(contrib);
+//        }
+//        return false;
+//      }
+//    };
+//  }
 }

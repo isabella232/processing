@@ -107,8 +107,9 @@ public class Server implements Runnable {
       }
 
     } catch (IOException e) {
-      e.printStackTrace();
+      //e.printStackTrace();
       thread = null;
+      throw new RuntimeException(e);
       //errorMessage("<init>", e);
     }
   }
@@ -177,6 +178,21 @@ public class Server implements Runnable {
   }
 
   
+  /**
+   * ( begin auto-generated from Server_active.xml )
+   * 
+   * Returns true if this server is still active and hasn't run
+   * into any trouble.
+   * 
+   * ( end auto-generated )
+   * @webref server:server
+   * @brief Return true if this server is still active.
+   */
+  public boolean active() {
+    return thread != null;
+  }
+  
+  
   static public String ip() {
     try {
       return InetAddress.getLocalHost().getHostAddress();
@@ -210,6 +226,16 @@ public class Server implements Runnable {
       for (int i = 0; i < clientCount; i++) {
         int which = (index + i) % clientCount;
         Client client = clients[which];
+        //Check for valid client
+        if (!client.active()){
+          removeIndex(which);  //Remove dead client
+          i--;                 //Don't skip the next client
+          //If the client has data make sure lastAvailable
+          //doesn't end up skipping the next client
+          which--;
+          //fall through to allow data from dead clients
+          //to be retreived.
+        }
         if (client.available() > 0) {
           lastAvailable = which;
           return client;
@@ -309,8 +335,8 @@ public class Server implements Runnable {
   public void write(int data) {  // will also cover char
     int index = 0;
     while (index < clientCount) {
-      clients[index].write(data);
       if (clients[index].active()) {
+        clients[index].write(data);
         index++;
       } else {
         removeIndex(index);
@@ -322,8 +348,8 @@ public class Server implements Runnable {
   public void write(byte data[]) {
     int index = 0;
     while (index < clientCount) {
-      clients[index].write(data);
       if (clients[index].active()) {
+        clients[index].write(data);
         index++;
       } else {
         removeIndex(index);
@@ -335,8 +361,8 @@ public class Server implements Runnable {
   public void write(String data) {
     int index = 0;
     while (index < clientCount) {
-      clients[index].write(data);
       if (clients[index].active()) {
+        clients[index].write(data);
         index++;
       } else {
         removeIndex(index);

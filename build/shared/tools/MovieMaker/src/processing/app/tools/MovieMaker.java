@@ -24,7 +24,9 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.filechooser.FileSystemView;
 
-import processing.app.Editor;
+import processing.app.Base;
+import processing.app.Language;
+
 import ch.randelshofer.gui.datatransfer.FileTextFieldTransferHandler;
 import ch.randelshofer.media.mp3.MP3AudioInputStream;
 import ch.randelshofer.media.quicktime.QuickTimeWriter;
@@ -34,11 +36,11 @@ import ch.randelshofer.media.quicktime.QuickTimeWriter;
  * Hacked from Werner Randelshofer's QuickTimeWriter demo. The original version
  * can be found <a href="http://www.randelshofer.ch/blog/2010/10/writing-quicktime-movies-in-pure-java/">here</a>.
  * <p>
- * A more up-to-date version of the project seems to be 
+ * A more up-to-date version of the project is
  * <a href="http://www.randelshofer.ch/monte/">here</a>.
- * If someone would like to help us update the encoder, that'd be great.
+ * Problem is, it's too big, so we don't want to merge it into our code.
  * <p>
- * Broken out as a separate project because the license (CC) probably isn't 
+ * Broken out as a separate project because the license (CC) probably isn't
  * compatible with the rest of Processing and we don't want any confusion.
  * <p>
  * Added JAI ImageIO to support lots of other image file formats [131008].
@@ -51,7 +53,7 @@ import ch.randelshofer.media.quicktime.QuickTimeWriter;
  * <li> The dialog box is super ugly. It's a hacked up version of the previous
  *      interface, but I'm too scared to pull that GUI layout code apart.
  * <li> The 'None' compressor seems to have bugs, so just disabled it instead.
- * <li> The 'pass through' option seems to be broken, so it's been removed. 
+ * <li> The 'pass through' option seems to be broken, so it's been removed.
  *      In its place is an option to use the same width/height as the originals.
  * <li> When this new 'pass through' is set, there's some nastiness with how
  *      the 'final' width/height variables are passed to the movie maker.
@@ -60,52 +62,21 @@ import ch.randelshofer.media.quicktime.QuickTimeWriter;
  * Ben Fry 2011-09-06, updated 2013-10-09
  */
 public class MovieMaker extends JFrame implements Tool {
-//  private JFileChooser imageFolderChooser;
-//  private JFileChooser soundFileChooser;
-//  private JFileChooser movieFileChooser;
   private Preferences prefs;
 
-//  private Editor editor;
-
-//MovieMaker m = new MovieMaker();
-//m.setVisible(true);
-//m.pack();
 
   public String getMenuTitle() {
-    return "Movie Maker";
+    return Language.text("movie_maker");
   }
 
 
   public void run() {
-//    System.out.println("calling run() for MovieMaker " + EventQueue.isDispatchThread());
     setVisible(true);
   }
 
 
-//  public void run() {
-//    String classPath =
-//      getClass().getProtectionDomain().getCodeSource().getLocation().getPath();
-//    System.out.println("cp is " + classPath);
-//    try {
-//      String[] cmd = new String[] {
-//        "java", "-cp", classPath, "processing.app.tools.MovieMaker"
-//      };
-//      Runtime.getRuntime().exec(cmd);
-//    } catch (IOException e) {
-//      e.printStackTrace();
-//    }
-//  }
-
-
-  public void init(Editor editor) {
-//    System.out.println("calling init for MovieMaker " + EventQueue.isDispatchThread());
-//    this.editor = editor;
-    initComponents(editor == null);
-
-//    String version = getClass().getPackage().getImplementationVersion();
-//    if (version != null) {
-//      setTitle(getTitle() + " " + version);
-//    }
+  public void init(Base base) {
+    initComponents(base.getActiveEditor() == null);
 
     ((JComponent) getContentPane()).setBorder(new EmptyBorder(12, 18, 18, 18));
     imageFolderField.setTransferHandler(new FileTextFieldTransferHandler(JFileChooser.DIRECTORIES_ONLY));
@@ -121,9 +92,6 @@ public class MovieMaker extends JFrame implements Tool {
       heightField,
       heightLabel,
       originalSizeCheckBox,
-//      noPreparationRadio,
-//      fastStartCompressedRadio,
-//      fastStartRadio
     };
     for (JComponent c : smallComponents) {
       c.putClientProperty("JComponent.sizeVariant", "small");
@@ -200,23 +168,15 @@ public class MovieMaker extends JFrame implements Tool {
     heightLabel = new JLabel();
     heightField = new JTextField();
     compressionLabel = new JLabel();
-    compressionBox = new JComboBox();
+    compressionBox = new JComboBox<String>();
     fpsLabel = new JLabel();
     fpsField = new JTextField();
     originalSizeCheckBox = new JCheckBox();
-//    streamingLabel = new JLabel();
-//    streamingGroup = new ButtonGroup();
-//    noPreparationRadio = new JRadioButton();
-//    fastStartRadio = new JRadioButton();
-//    fastStartCompressedRadio = new JRadioButton();
-
-//    FormListener formListener = new FormListener();
 
     setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
     addWindowListener(new WindowAdapter() {
       public void windowClosing(WindowEvent e) {
         setVisible(false);
-//        System.exit(0);
       }
     });
     registerWindowCloseKeys(getRootPane(), new ActionListener() {
@@ -228,35 +188,18 @@ public class MovieMaker extends JFrame implements Tool {
         }
       }
     });
-    setTitle("QuickTime Movie Maker");
+    setTitle(Language.text("movie_maker.title"));
 
-    aboutLabel =
-      new JLabel("<html>" +
-                 "<b>This tool creates a QuickTime movie from a sequence of images.</b><br> " +
-                 "<br>" +
-                 "To avoid artifacts caused by re-compressing images as video,<br> " +
-                 "use TIFF, TGA (from Processing), or PNG images as the source.<br>" +
-                 "<br>" +
-                 "TIFF and TGA images will write more quickly, but require more disk:<br>" +
-                 "<tt>saveFrame(\"frames/####.tif\");</tt><br>" +
-                 "<tt>saveFrame(\"frames/####.tga\");</tt><br>" +
-                 "<br>" +
-                 "PNG images are smaller, but your sketch will run more slowly:<br>" +
-                 "<tt>saveFrame(\"frames/####.png\");</tt><br>" +
-                 "<br>" +
-                 "<font color=#808080>This code is based on QuickTime Movie Maker 1.5.1 2011-01-17.<br>" +
-                 "Copyright \u00A9 2010-2011 Werner Randelshofer. All rights reserved.<br>" +
-                 "This software is licensed under Creative Commons Atribution 3.0.");
-
-    imageFolderHelpLabel.setText("Drag a folder with image files into the field below:");
-    chooseImageFolderButton.setText("Choose...");
+    aboutLabel = new JLabel(Language.text("movie_maker.blurb"));
+    imageFolderHelpLabel.setText(Language.text("movie_maker.image_folder_help_label"));
+    chooseImageFolderButton.setText(Language.text("movie_maker.choose_button"));
     //chooseImageFolderButton.addActionListener(formListener);
     chooseImageFolderButton.addActionListener(new ActionListener() {
-      
+
       @Override
       public void actionPerformed(ActionEvent e) {
-        Chooser.selectFolder(MovieMaker.this, 
-                             "Select image folder...", 
+        Chooser.selectFolder(MovieMaker.this,
+                             Language.text("movie_maker.select_image_folder"),
                              new File(imageFolderField.getText()),
                              new Chooser.Callback() {
           void select(File file) {
@@ -269,15 +212,15 @@ public class MovieMaker extends JFrame implements Tool {
     });
 
 
-    soundFileHelpLabel.setText("Drag a sound file into the field below (.au, .aiff, .wav, .mp3):");
-    chooseSoundFileButton.setText("Choose...");
+    soundFileHelpLabel.setText(Language.text("movie_maker.sound_file_help_label"));
+    chooseSoundFileButton.setText(Language.text("movie_maker.choose_button"));
     //chooseSoundFileButton.addActionListener(formListener);
     chooseSoundFileButton.addActionListener(new ActionListener() {
-      
+
       @Override
       public void actionPerformed(ActionEvent e) {
-        Chooser.selectInput(MovieMaker.this, 
-                            "Select sound file...", 
+        Chooser.selectInput(MovieMaker.this,
+                            Language.text("movie_maker.select_sound_file"),
                             new File(soundFileField.getText()),
                             new Chooser.Callback() {
 
@@ -290,17 +233,17 @@ public class MovieMaker extends JFrame implements Tool {
       }
     });
 
-    createMovieButton.setText("Create Movie...");
+    createMovieButton.setText(Language.text("movie_maker.create_movie_button"));
 //    createMovieButton.addActionListener(formListener);
     createMovieButton.addActionListener(new ActionListener() {
-      
+
       @Override
       public void actionPerformed(ActionEvent e) {
         String lastPath = prefs.get("movie.outputFile", null);
         File lastFile = lastPath == null ? null : new File(lastPath);
-        Chooser.selectOutput(MovieMaker.this, 
-                             "Save movie as...",
-                             lastFile, 
+        Chooser.selectOutput(MovieMaker.this,
+                             Language.text("movie_maker.save_dialog_prompt"),
+                             lastFile,
                              new Chooser.Callback() {
           @Override
           void select(File file) {
@@ -319,7 +262,7 @@ public class MovieMaker extends JFrame implements Tool {
 //                public void run() {
 //                  createMovie(target);
 //                }
-//                
+//
 //              });
             }
           }
@@ -330,32 +273,38 @@ public class MovieMaker extends JFrame implements Tool {
     Font font = new Font("Dialog", Font.PLAIN, 11);
 
     widthLabel.setFont(font);
-    widthLabel.setText("Width:");
+    widthLabel.setText(Language.text("movie_maker.width"));
     widthField.setColumns(4);
     widthField.setFont(font);
     widthField.setText("320");
 
     heightLabel.setFont(font);
-    heightLabel.setText("Height:");
+    heightLabel.setText(Language.text("movie_maker.height"));
     heightField.setColumns(4);
     heightField.setFont(font);
     heightField.setText("240");
 
     compressionLabel.setFont(font);
-    compressionLabel.setText("Compression:");
+    compressionLabel.setText(Language.text("movie_maker.compression"));
     compressionBox.setFont(font);
     //compressionBox.setModel(new DefaultComboBoxModel(new String[] { "None", "Animation", "JPEG", "PNG" }));
-    compressionBox.setModel(new DefaultComboBoxModel(new String[] { "Animation", "JPEG", "PNG" }));
+    compressionBox.setModel(new DefaultComboBoxModel<String>(
+      new String[] {
+        Language.text("movie_maker.compression.animation"),
+        Language.text("movie_maker.compression.jpeg"),
+        Language.text("movie_maker.compression.png")
+      }
+    ));
 
     fpsLabel.setFont(font);
-    fpsLabel.setText("Frame Rate:");
+    fpsLabel.setText(Language.text("movie_maker.framerate"));
     fpsField.setColumns(4);
     fpsField.setFont(font);
     fpsField.setText("30");
 
     originalSizeCheckBox.setFont(font);
-    originalSizeCheckBox.setText("Same size as originals");
-    originalSizeCheckBox.setToolTipText("Check this box if the folder contains already encoded video frames in the desired size.");
+    originalSizeCheckBox.setText(Language.text("movie_maker.orig_size_button"));
+    originalSizeCheckBox.setToolTipText(Language.text("movie_maker.orig_size_tooltip"));
 
 //        streamingLabel.setText("Prepare for Internet Streaming");
 //
@@ -381,80 +330,80 @@ public class MovieMaker extends JFrame implements Tool {
     GroupLayout layout = new GroupLayout(getContentPane());
     getContentPane().setLayout(layout);
     layout.setHorizontalGroup(layout.createParallelGroup(GroupLayout.Alignment.LEADING)
-                              .addGroup(layout.createSequentialGroup()
-                                        .addGroup(layout.createParallelGroup(GroupLayout.Alignment.LEADING)
-                                                  .addGroup(layout.createSequentialGroup()
-                                                            .addGap(61, 61, 61)
-                                                            .addGroup(layout.createParallelGroup(GroupLayout.Alignment.LEADING)
-                                                                      .addComponent(widthLabel)
-                                                                      .addComponent(fpsLabel))
-                                                                      .addPreferredGap(LayoutStyle.ComponentPlacement.RELATED)
-                                                                      .addGroup(layout.createParallelGroup(GroupLayout.Alignment.LEADING)
-                                                                                .addGroup(layout.createSequentialGroup()
-                                                                                          .addComponent(fpsField, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE)
-                                                                                          .addPreferredGap(LayoutStyle.ComponentPlacement.UNRELATED)
-                                                                                          .addComponent(compressionLabel)
-                                                                                          .addGap(1, 1, 1)
-                                                                                          .addComponent(compressionBox, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE)
-                                                                                          .addPreferredGap(LayoutStyle.ComponentPlacement.UNRELATED)
-                                                                                          .addComponent(originalSizeCheckBox))
-                                                                                          .addGroup(layout.createSequentialGroup()
-                                                                                                    .addComponent(widthField, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE)
-                                                                                                    .addPreferredGap(LayoutStyle.ComponentPlacement.UNRELATED)
-                                                                                                    .addComponent(heightLabel)
-                                                                                                    .addPreferredGap(LayoutStyle.ComponentPlacement.RELATED)
-                                                                                                    .addComponent(heightField, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE)))
-                                                                                                    .addGap(41, 41, 41))
-                                                                                                    .addGroup(layout.createSequentialGroup()
-                                                                                                              .addContainerGap()
-                                                                                                              .addGroup(layout.createParallelGroup(GroupLayout.Alignment.LEADING)
-                                                                                                                        .addComponent(aboutLabel, GroupLayout.DEFAULT_SIZE, 484, Short.MAX_VALUE)
-                                                                                                                        .addComponent(imageFolderHelpLabel)
-                                                                                                                        .addComponent(soundFileHelpLabel)
-                                                                                                                        .addGroup(layout.createSequentialGroup()
-                                                                                                                                  .addComponent(soundFileField, GroupLayout.DEFAULT_SIZE, 372, Short.MAX_VALUE)
-                                                                                                                                  .addPreferredGap(LayoutStyle.ComponentPlacement.RELATED)
-                                                                                                                                  .addComponent(chooseSoundFileButton))
-                                                                                                                                  .addComponent(createMovieButton, GroupLayout.Alignment.TRAILING)
-                                                                                                                                  .addGroup(GroupLayout.Alignment.TRAILING, layout.createSequentialGroup()
-                                                                                                                                            .addComponent(imageFolderField, GroupLayout.DEFAULT_SIZE, 372, Short.MAX_VALUE)
-                                                                                                                                            .addPreferredGap(LayoutStyle.ComponentPlacement.RELATED)
-                                                                                                                                            .addComponent(chooseImageFolderButton))))
-                                                                                                                                            .addGroup(layout.createSequentialGroup()
-                                                                                                                                                      .addContainerGap())))
+      .addGroup(layout.createSequentialGroup()
+        .addGroup(layout.createParallelGroup(GroupLayout.Alignment.LEADING)
+          .addGroup(layout.createSequentialGroup()
+            .addGap(61, 61, 61)
+            .addGroup(layout.createParallelGroup(GroupLayout.Alignment.LEADING)
+              .addComponent(widthLabel)
+              .addComponent(fpsLabel))
+              .addPreferredGap(LayoutStyle.ComponentPlacement.RELATED)
+              .addGroup(layout.createParallelGroup(GroupLayout.Alignment.LEADING)
+                .addGroup(layout.createSequentialGroup()
+                  .addComponent(fpsField, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE)
+                  .addPreferredGap(LayoutStyle.ComponentPlacement.UNRELATED)
+                  .addComponent(compressionLabel)
+                  .addGap(1, 1, 1)
+                  .addComponent(compressionBox, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE)
+                  .addPreferredGap(LayoutStyle.ComponentPlacement.UNRELATED)
+                  .addComponent(originalSizeCheckBox))
+                  .addGroup(layout.createSequentialGroup()
+                    .addComponent(widthField, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE)
+                    .addPreferredGap(LayoutStyle.ComponentPlacement.UNRELATED)
+                    .addComponent(heightLabel)
+                    .addPreferredGap(LayoutStyle.ComponentPlacement.RELATED)
+                    .addComponent(heightField, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE)))
+                    .addGap(41, 41, 41))
+                    .addGroup(layout.createSequentialGroup()
+                      .addContainerGap()
+                      .addGroup(layout.createParallelGroup(GroupLayout.Alignment.LEADING)
+                        .addComponent(aboutLabel, GroupLayout.DEFAULT_SIZE, 484, Short.MAX_VALUE)
+                        .addComponent(imageFolderHelpLabel)
+                        .addComponent(soundFileHelpLabel)
+                        .addGroup(layout.createSequentialGroup()
+                          .addComponent(soundFileField, GroupLayout.DEFAULT_SIZE, 372, Short.MAX_VALUE)
+                          .addPreferredGap(LayoutStyle.ComponentPlacement.RELATED)
+                          .addComponent(chooseSoundFileButton))
+                          .addComponent(createMovieButton, GroupLayout.Alignment.TRAILING)
+                          .addGroup(GroupLayout.Alignment.TRAILING, layout.createSequentialGroup()
+                            .addComponent(imageFolderField, GroupLayout.DEFAULT_SIZE, 372, Short.MAX_VALUE)
+                            .addPreferredGap(LayoutStyle.ComponentPlacement.RELATED)
+                            .addComponent(chooseImageFolderButton))))
+                            .addGroup(layout.createSequentialGroup()
+                              .addContainerGap())))
     );
     layout.setVerticalGroup(layout.createParallelGroup(GroupLayout.Alignment.LEADING)
-                            .addGroup(layout.createSequentialGroup()
-                                      .addContainerGap()
-                                      .addComponent(aboutLabel, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE)
-                                      .addGap(18, 18, 18)
-                                      .addComponent(imageFolderHelpLabel)
-                                      .addPreferredGap(LayoutStyle.ComponentPlacement.RELATED)
-                                      .addGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE)
-                                                .addComponent(imageFolderField, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE)
-                                                .addComponent(chooseImageFolderButton))
-                                                .addPreferredGap(LayoutStyle.ComponentPlacement.RELATED)
-                                                .addGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE)
-                                                          .addComponent(widthLabel)
-                                                          .addComponent(widthField, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE)
-                                                          .addComponent(heightLabel)
-                                                          .addComponent(heightField, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE))
-                                                          .addPreferredGap(LayoutStyle.ComponentPlacement.RELATED)
-                                                          .addGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE)
-                                                                    .addComponent(compressionBox, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE)
-                                                                    .addComponent(fpsLabel)
-                                                                    .addComponent(fpsField, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE)
-                                                                    .addComponent(compressionLabel)
-                                                                    .addComponent(originalSizeCheckBox))
-                                                                    .addGap(18, 18, 18)
-                                                                    .addComponent(soundFileHelpLabel)
-                                                                    .addPreferredGap(LayoutStyle.ComponentPlacement.RELATED)
-                                                                    .addGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE)
-                                                                              .addComponent(soundFileField, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE)
-                                                                              .addComponent(chooseSoundFileButton))
-                                                                              .addGap(18, 18, 18)
-                                                                              .addComponent(createMovieButton)
-                                                                              .addContainerGap())
+            .addGroup(layout.createSequentialGroup()
+              .addContainerGap()
+              .addComponent(aboutLabel, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE)
+              .addGap(18, 18, 18)
+              .addComponent(imageFolderHelpLabel)
+              .addPreferredGap(LayoutStyle.ComponentPlacement.RELATED)
+              .addGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE)
+                .addComponent(imageFolderField, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE)
+                .addComponent(chooseImageFolderButton))
+                .addPreferredGap(LayoutStyle.ComponentPlacement.RELATED)
+                .addGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE)
+                  .addComponent(widthLabel)
+                  .addComponent(widthField, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE)
+                  .addComponent(heightLabel)
+                  .addComponent(heightField, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE))
+                  .addPreferredGap(LayoutStyle.ComponentPlacement.RELATED)
+                  .addGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE)
+                    .addComponent(compressionBox, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE)
+                    .addComponent(fpsLabel)
+                    .addComponent(fpsField, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE)
+                    .addComponent(compressionLabel)
+                    .addComponent(originalSizeCheckBox))
+                    .addGap(18, 18, 18)
+                    .addComponent(soundFileHelpLabel)
+                    .addPreferredGap(LayoutStyle.ComponentPlacement.RELATED)
+                    .addGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE)
+                      .addComponent(soundFileField, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE)
+                      .addComponent(chooseSoundFileButton))
+                      .addGap(18, 18, 18)
+                      .addComponent(createMovieButton)
+                      .addContainerGap())
     );
 
     pack();
@@ -516,6 +465,7 @@ public class MovieMaker extends JFrame implements Tool {
 //  }
 
 
+
   // this is super naughty, and shouldn't be out here. it's a hack to get the
   // ImageIcon width/height setting to work. there are better ways to do this
   // given a bit of time. you know, time? the infinite but non-renewable resource?
@@ -532,7 +482,7 @@ public class MovieMaker extends JFrame implements Tool {
     //final String streaming = prefs.get("movie.streaming", "fastStartCompressed");
     final String streaming = "fastStartCompressed";
     if (soundFile == null && imageFolder == null) {
-      JOptionPane.showMessageDialog(this, "<html>You need to specify a folder with<br>image files and/or a sound file.");
+      JOptionPane.showMessageDialog(this, Language.text("movie_maker.error.need_input"));
       return;
     }
 
@@ -542,11 +492,11 @@ public class MovieMaker extends JFrame implements Tool {
       height = Integer.parseInt(heightField.getText());
       fps = Double.parseDouble(fpsField.getText());
     } catch (Throwable t) {
-      JOptionPane.showMessageDialog(this, "<html>Width, Height and FPS must be numeric.");
+      JOptionPane.showMessageDialog(this, Language.text("movie_maker.error.badnumbers"));
       return;
     }
     if (width < 1 || height < 1 || fps < 1) {
-      JOptionPane.showMessageDialog(this, "<html>Width, Height and FPS must be greater than zero.");
+      JOptionPane.showMessageDialog(this, Language.text("movie_maker.error.badnumbers"));
       return;
     }
 
@@ -578,34 +528,6 @@ public class MovieMaker extends JFrame implements Tool {
     prefs.putInt("movie.compression", compressionBox.getSelectedIndex());
     prefs.putBoolean("movie.originalSize", originalSizeCheckBox.isSelected());
 
-
-    // ---------------------------------
-    // Choose an output file
-    // ---------------------------------
-    /*
-    if (movieFileChooser == null) {
-      movieFileChooser = new JFileChooser();
-      if (prefs.get("movie.outputFile", null) != null) {
-        movieFileChooser.setSelectedFile(new File(prefs.get("movie.outputFile", null)));
-      } else {
-        if (imageFolderField.getText().length() > 0) {
-          movieFileChooser.setCurrentDirectory(new File(imageFolderField.getText()).getParentFile());
-        } else if (soundFileField.getText().length() > 0) {
-          movieFileChooser.setCurrentDirectory(new File(soundFileField.getText()).getParentFile());
-        }
-      }
-    }
-    if (JFileChooser.APPROVE_OPTION != movieFileChooser.showSaveDialog(this)) {
-      return;
-    }
-
-    final File movieFile = movieFileChooser.getSelectedFile().getPath().toLowerCase().endsWith(".mov")//
-    ? movieFileChooser.getSelectedFile()
-        : new File(movieFileChooser.getSelectedFile().getPath() + ".mov");
-    prefs.put("movie.outputFile", movieFile.getPath());
-    createMovieButton.setEnabled(false);
-    */
-
     final boolean originalSize = originalSizeCheckBox.isSelected();
 
     // ---------------------------------
@@ -616,7 +538,6 @@ public class MovieMaker extends JFrame implements Tool {
       @Override
       protected Object doInBackground() {
         try {
-
           // Read image files
           File[] imgFiles = null;
           if (imageFolder != null) {
@@ -624,29 +545,25 @@ public class MovieMaker extends JFrame implements Tool {
               FileSystemView fsv = FileSystemView.getFileSystemView();
 
               public boolean accept(File f) {
-                return f.isFile() && !fsv.isHiddenFile(f) && !f.getName().equals("Thumbs.db");
+                return f.isFile() && !fsv.isHiddenFile(f) &&
+                  !f.getName().equals("Thumbs.db");
               }
             });
             if (imgFiles == null || imgFiles.length == 0) {
-              return new RuntimeException("No image files found.");
+              return new RuntimeException(Language.text("movie_maker.error.no_images_found"));
             }
             Arrays.sort(imgFiles);
           }
 
-          // Check on first image, if we can actually do pass through
+          // Get the width and height if we're preserving size.
           if (originalSize) {
-            // This was using ImageIcon, which can't handle some file types.
-            // For 2.1, switching to ImageIO (which is used for movie 
-            // generation anyway) [fry 131008]
-            BufferedImage temp = readImage(imgFiles[0]);
-            if (temp == null) {
-              return new RuntimeException("Coult not read " + imgFiles[0].getAbsolutePath());
+            Dimension d = findSize(imgFiles);
+            if (d == null) {
+              // No images at all? No video then.
+              throw new RuntimeException(Language.text("movie_maker.error.no_images_found"));
             }
-            width = temp.getWidth();
-            height = temp.getHeight();
-            if (width <= 0 || height <= 0) {
-              return new RuntimeException("Could not read " + imgFiles[0].getName() + ", it may be bad.");
-            }
+            width = d.width;
+            height = d.height;
           }
 
           // Delete movie file if it already exists.
@@ -662,10 +579,23 @@ public class MovieMaker extends JFrame implements Tool {
             writeAudioOnly(movieFile, soundFile, streaming);
           }
           return null;
-          
+
         } catch (Throwable t) {
           return t;
         }
+      }
+
+      Dimension findSize(File[] imgFiles) {
+        for (int i = 0; i < imgFiles.length; i++) {
+          BufferedImage temp = readImage(imgFiles[i]);
+          if (temp != null) {
+            return new Dimension(temp.getWidth(), temp.getHeight());
+          } else {
+            // Nullify bad Files so we don't get errors twice.
+            imgFiles[i] = null;
+          }
+        }
+        return null;
       }
 
       @Override
@@ -679,7 +609,10 @@ public class MovieMaker extends JFrame implements Tool {
         if (o instanceof Throwable) {
           Throwable t = (Throwable) o;
           t.printStackTrace();
-          JOptionPane.showMessageDialog(MovieMaker.this, "<html>Creating the QuickTime Movie failed.<br>" + (t.getMessage() == null ? t.toString() : t.getMessage()), "Sorry", JOptionPane.ERROR_MESSAGE);
+          JOptionPane.showMessageDialog(MovieMaker.this,
+              Language.text("movie_maker.error.movie_failed") + "\n" + (t.getMessage() == null ? t.toString() : t.getMessage()),
+              Language.text("movie_maker.error.sorry"),
+              JOptionPane.ERROR_MESSAGE);
         }
         createMovieButton.setEnabled(true);
       }
@@ -688,115 +621,92 @@ public class MovieMaker extends JFrame implements Tool {
 
 
   }//GEN-LAST:event_createMovie
-  
-  
-  private BufferedImage readImage(File file) throws IOException {
-    // Make sure that we're using a ClassLoader that's aware of the ImageIO jar
-    //Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
-    //BufferedImage image = ImageIO.read(file);
-    // rewritten to switch back to the default loader
-    Thread current = Thread.currentThread();
-    ClassLoader origLoader = Thread.currentThread().getContextClassLoader();
-    current.setContextClassLoader(getClass().getClassLoader());
-    BufferedImage image = ImageIO.read(file);
-    current.setContextClassLoader(origLoader);
 
-    /*
-    String[] loadImageFormats = ImageIO.getReaderFormatNames();
-    if (loadImageFormats != null) {
-      for (String format : loadImageFormats) {
-        System.out.println(format);
+
+  /**
+   * Read an image from a file. ImageIcon doesn't don't do well with some
+   * file types, so we use ImageIO. ImageIO doesn't handle TGA files
+   * created by Processing, so this calls our own loadImageTGA().
+   * <br> Prints errors itself.
+   * @return null on error; image only if okay.
+   */
+  private BufferedImage readImage(File file) {
+    try {
+      Thread current = Thread.currentThread();
+      ClassLoader origLoader = Thread.currentThread().getContextClassLoader();
+      current.setContextClassLoader(getClass().getClassLoader());
+
+      BufferedImage image;
+      try {
+        image = ImageIO.read(file);
+      } catch (IOException e) {
+        System.err.println(Language.interpolate("movie_maker.error.cannot_read",
+              file.getAbsolutePath()));
+        return null;
       }
-    }
-    */
-    
-    if (image == null) {
-      String path = file.getAbsolutePath();
-      // Might be an incompatible TGA or TIFF created by Processing
-      if (path.toLowerCase().endsWith(".tga")) {
-        return loadImageTGA(file);
-        
-      } else if (path.toLowerCase().endsWith(".tif")) {
-        throw new IOException("Try TGA or PNG images instead of TIFF.");
+
+      current.setContextClassLoader(origLoader);
+
+      /*
+      String[] loadImageFormats = ImageIO.getReaderFormatNames();
+      if (loadImageFormats != null) {
+        for (String format : loadImageFormats) {
+          System.out.println(format);
+        }
       }
+      */
+
+      if (image == null) {
+        String path = file.getAbsolutePath();
+        String pathLower = path.toLowerCase();
+        // Might be an incompatible TGA or TIFF created by Processing
+        if (pathLower.endsWith(".tga")) {
+          try {
+            return loadImageTGA(file);
+          } catch (IOException e) {
+            cannotRead(file);
+            return null;
+          }
+
+        } else if (pathLower.endsWith(".tif") || pathLower.endsWith(".tiff")) {
+          cannotRead(file);
+          System.err.println(Language.text("movie_maker.error.avoid_tiff"));
+          return null;
+
+        } else {
+          cannotRead(file);
+          return null;
+        }
+
+      } else {
+        if (image.getWidth() <= 0 || image.getHeight() <= 0) {
+          System.err.println(Language.interpolate("movie_maker.error.cannot_read_maybe_bad", file.getAbsolutePath()));
+          return null;
+        }
+      }
+      return image;
+
+    // Catch-all is sometimes needed.
+    } catch (RuntimeException e) {
+      cannotRead(file);
+      return null;
     }
-    return image;
   }
-  
-  
-  /*
-  static public void selectFolder(final Frame parentFrame, 
-                                  final String prompt,
-//                                  final String callbackMethod,
-                                  final File defaultSelection,
-//                                  final Object callbackObject,
-                                  final SelectCallback callback) {
-//    EventQueue.invokeLater(new Runnable() {
-//      public void run() {
-    File selectedFile = null;
 
-    if (System.getProperty("os.name").contains("Mac")) {
-      FileDialog fileDialog =
-          new FileDialog(parentFrame, prompt, FileDialog.LOAD);
-      System.setProperty("apple.awt.fileDialogForDirectories", "true");
-      fileDialog.setVisible(true);
-      System.setProperty("apple.awt.fileDialogForDirectories", "false");
-      String filename = fileDialog.getFile();
-      if (filename != null) {
-        selectedFile = new File(fileDialog.getDirectory(), fileDialog.getFile());
-      }
-    } else {
-      JFileChooser fileChooser = new JFileChooser();
-      fileChooser.setDialogTitle(prompt);
-      fileChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-      if (defaultSelection != null) {
-        fileChooser.setSelectedFile(defaultSelection);
-      }
 
-      int result = fileChooser.showOpenDialog(parentFrame);
-      if (result == JFileChooser.APPROVE_OPTION) {
-        selectedFile = fileChooser.getSelectedFile();
-      }
-    }
-    //selectCallback(selectedFile, callbackMethod, callbackObject);
-    callback.select(selectedFile);
-//      }
-//    });
+  private void cannotRead(File file) {
+    String path = file.getAbsolutePath();
+    String msg = Language.interpolate("movie_maker.error.cannot_read", path);
+    System.err.println(msg);
   }
-  */
-  
-  
-//  static private void selectCallback(File selectedFile,
-//                                     String callbackMethod,
-//                                     Object callbackObject) {
-//    try {
-//      Class<?> callbackClass = callbackObject.getClass();
-//      Method selectMethod =
-//        callbackClass.getMethod(callbackMethod, new Class[] { File.class });
-//      selectMethod.invoke(callbackObject, new Object[] { selectedFile });
-//
-//    } catch (IllegalAccessException iae) {
-//      System.err.println(callbackMethod + "() must be public");
-//
-//    } catch (InvocationTargetException ite) {
-//      ite.printStackTrace();
-//
-//    } catch (NoSuchMethodException nsme) {
-//      System.err.println(callbackMethod + "() could not be found");
-//    }
-//  }
-  
 
-//  private void streamingRadioPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_streamingRadioPerformed
-//    prefs.put("movie.streaming", evt.getActionCommand());
-//  }//GEN-LAST:event_streamingRadioPerformed
 
   /** variable frame rate. */
   private void writeVideoOnlyVFR(File movieFile, File[] imgFiles, int width, int height, double fps, QuickTimeWriter.VideoFormat videoFormat, /*boolean passThrough,*/ String streaming) throws IOException {
     File tmpFile = streaming.equals("none") ? movieFile : new File(movieFile.getPath() + ".tmp");
-    ProgressMonitor p = new ProgressMonitor(MovieMaker.this, 
-                                            "Creating " + movieFile.getName(), 
-                                            "Creating output file...", 
+    ProgressMonitor p = new ProgressMonitor(MovieMaker.this,
+                                            Language.interpolate("movie_maker.progress.creating_file_name", movieFile.getName()),
+                                            Language.text("movie_maker.progress.creating_output_file"),
                                             0, imgFiles.length);
     Graphics2D g = null;
     BufferedImage img = null;
@@ -824,14 +734,19 @@ public class MovieMaker extends JFrame implements Tool {
       int prevImgDuration = 0;
       for (int i = 0; i < imgFiles.length && !p.isCanceled(); i++) {
         File f = imgFiles[i];
-        p.setNote("Processing " + f.getName());
+        if (f == null) continue;
+
+        p.setNote(Language.interpolate("movie_maker.progress.processing", f.getName()));
         p.setProgress(i);
 
         //if (passThrough) {
         if (false) {
           qtOut.writeSample(0, f, duration);
         } else {
-          BufferedImage fImg = ImageIO.read(f);
+          //BufferedImage fImg = ImageIO.read(f);
+          BufferedImage fImg = readImage(f);
+          if (fImg == null) continue;
+
           g.drawImage(fImg, 0, 0, width, height, null);
           if (i != 0 && Arrays.equals(data, prevData)) {
             prevImgDuration += duration;
@@ -870,71 +785,14 @@ public class MovieMaker extends JFrame implements Tool {
     }
   }
 
-  /** fixed framerate. */
-  /*
-    private void writeVideoOnlyFFR(File movieFile, File[] imgFiles, int width, int height, double fps, QuickTimeWriter.VideoFormat videoFormat, boolean passThrough, String streaming) throws IOException {
-        File tmpFile = streaming.equals("none") ? movieFile : new File(movieFile.getPath() + ".tmp");
-        ProgressMonitor p = new ProgressMonitor(MovieMaker.this, "Creating " + movieFile.getName(), "Creating Output File...", 0, imgFiles.length);
-        Graphics2D g = null;
-        BufferedImage imgBuffer = null;
-        QuickTimeWriter qtOut = null;
-
-        try {
-            int timeScale = (int) (fps * 100.0);
-            int duration = 100;
-            qtOut = new QuickTimeWriter(videoFormat == QuickTimeWriter.VideoFormat.RAW ? movieFile : tmpFile);
-            qtOut.addVideoTrack(videoFormat, timeScale, width, height);
-            //qtOut.setSyncInterval(0,0);
-            if (!passThrough) {
-                imgBuffer = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
-                g = imgBuffer.createGraphics();
-                g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
-            }
-            for (int i = 0; i < imgFiles.length && !p.isCanceled(); i++) {
-                File f = imgFiles[i];
-                p.setNote("Processing " + f.getName());
-                p.setProgress(i);
-
-                if (passThrough) {
-                    qtOut.writeSample(0, f, duration);
-                } else {
-                    BufferedImage fImg = ImageIO.read(f);
-                    if (fImg == null) {
-                        continue;
-                    }
-                    g.drawImage(fImg, 0, 0, width, height, null);
-                    qtOut.writeFrame(0, imgBuffer, duration);
-                }
-            }
-            if (streaming.equals("fastStart")) {
-                qtOut.toWebOptimizedMovie(movieFile, false);
-                tmpFile.delete();
-            } else if (streaming.equals("fastStartCompressed")) {
-                qtOut.toWebOptimizedMovie(movieFile, true);
-                tmpFile.delete();
-            }
-                qtOut.close();
-                qtOut = null;
-        } finally {
-            p.close();
-            if (g != null) {
-                g.dispose();
-            }
-            if (imgBuffer != null) {
-                imgBuffer.flush();
-            }
-            if (qtOut != null) {
-                qtOut.close();
-            }
-        }
-    }
-   */
 
   private void writeAudioOnly(File movieFile, File audioFile, String streaming) throws IOException {
     File tmpFile = streaming.equals("none") ? movieFile : new File(movieFile.getPath() + ".tmp");
 
     int length = (int) Math.min(Integer.MAX_VALUE, audioFile.length()); // file length is used for a rough progress estimate. This will only work for uncompressed audio.
-    ProgressMonitor p = new ProgressMonitor(MovieMaker.this, "Creating " + movieFile.getName(), "Initializing...", 0, length);
+    ProgressMonitor p = new ProgressMonitor(MovieMaker.this,
+      Language.interpolate("movie_maker.progress.creating_file_name", movieFile.getName()),
+      Language.text("movie_maker.progress.initializing"), 0, length);
     AudioInputStream audioIn = null;
     QuickTimeWriter qtOut = null;
 
@@ -955,8 +813,9 @@ public class MovieMaker extends JFrame implements Tool {
       //System.out.println("  frameDuration=" + asDuration);
       long count = 0;
       byte[] audioBuffer = new byte[asSize * nbOfFramesInBuffer];
-      for (int bytesRead = audioIn.read(audioBuffer); bytesRead
-      != -1; bytesRead = audioIn.read(audioBuffer)) {
+      for (int bytesRead = audioIn.read(audioBuffer);
+          bytesRead != -1;
+          bytesRead = audioIn.read(audioBuffer)) {
         if (bytesRead != 0) {
           int framesRead = bytesRead / asSize;
           qtOut.writeSamples(0, framesRead, audioBuffer, 0, bytesRead, asDuration);
@@ -1001,9 +860,15 @@ public class MovieMaker extends JFrame implements Tool {
     }
   }
 
-  private void writeVideoAndAudio(File movieFile, File[] imgFiles, File audioFile, int width, int height, double fps, QuickTimeWriter.VideoFormat videoFormat, /*boolean passThrough,*/ String streaming) throws IOException {
+  private void writeVideoAndAudio(File movieFile, File[] imgFiles, File audioFile,
+      int width, int height, double fps, QuickTimeWriter.VideoFormat videoFormat,
+      /*boolean passThrough,*/ String streaming) throws IOException {
+
     File tmpFile = streaming.equals("none") ? movieFile : new File(movieFile.getPath() + ".tmp");
-    ProgressMonitor p = new ProgressMonitor(MovieMaker.this, "Creating " + movieFile.getName(), "Creating Output File...", 0, imgFiles.length);
+    ProgressMonitor p = new ProgressMonitor(MovieMaker.this,
+        Language.interpolate("movie_maker.progress.creating_file_name", movieFile.getName()),
+        Language.text("movie_maker.progress.creating_output_file"),
+        0, imgFiles.length);
     AudioInputStream audioIn = null;
     QuickTimeWriter qtOut = null;
     BufferedImage imgBuffer = null;
@@ -1077,23 +942,25 @@ public class MovieMaker extends JFrame implements Tool {
         }
 
         // Advance video to movie time
-        while (imgIndex < imgFiles.length && qtOut.getTrackDuration(1) < movieTime) {
+        for (; imgIndex < imgFiles.length && qtOut.getTrackDuration(1) < movieTime; ++imgIndex) {
           // catch up with video time
           p.setProgress(imgIndex);
-          p.setNote("Processing " + imgFiles[imgIndex].getName());
+          File f = imgFiles[imgIndex];
+          if (f == null) continue;
+
+          p.setNote(Language.interpolate("movie_maker.progress.processing", f.getName()));
           //if (passThrough) {
           if (false) {
-            qtOut.writeSample(1, imgFiles[imgIndex], vsDuration);
+            qtOut.writeSample(1, f, vsDuration);
           } else {
-            BufferedImage fImg = ImageIO.read(imgFiles[imgIndex]);
-            if (fImg == null) {
-              continue;
-            }
+            //BufferedImage fImg = ImageIO.read(imgFiles[imgIndex]);
+            BufferedImage fImg = readImage(f);
+            if (fImg == null) continue;
+
             g.drawImage(fImg, 0, 0, width, height, null);
             fImg.flush();
             qtOut.writeFrame(1, imgBuffer, vsDuration);
           }
-          ++imgIndex;
         }
       }
       if (streaming.equals("fastStart")) {
@@ -1126,14 +993,14 @@ public class MovieMaker extends JFrame implements Tool {
     }
   }
 
-  
+
   /**
-   * Targa image loader for RLE-compressed TGA files.  
-   * Code taken from PApplet, any changes here should lead to updates there. 
+   * Targa image loader for RLE-compressed TGA files.
+   * Code taken from PApplet, any changes here should lead to updates there.
    */
   static private BufferedImage loadImageTGA(File file) throws IOException {
     InputStream is = new FileInputStream(file);
-    
+
     try {
       byte header[] = new byte[18];
       int offset = 0;
@@ -1182,7 +1049,7 @@ public class MovieMaker extends JFrame implements Tool {
       }
 
       if (format == 0) {
-        throw new IOException("Unknown .tga file format for " + file.getName());
+        throw new IOException(Language.interpolate("movie_maker.error.unknown_tga_format", file.getName()));
       }
 
       int w = ((header[13] & 0xff) << 8) + (header[12] & 0xff);
@@ -1268,12 +1135,11 @@ public class MovieMaker extends JFrame implements Tool {
               break;
             case RGB:
               pixel = 0xFF000000 |
-              is.read() | (is.read() << 8) | (is.read() << 16);
-              //(is.read() << 16) | (is.read() << 8) | is.read();
+                is.read() | (is.read() << 8) | (is.read() << 16);
               break;
             case ARGB:
               pixel = is.read() |
-              (is.read() << 8) | (is.read() << 16) | (is.read() << 24);
+                (is.read() << 8) | (is.read() << 16) | (is.read() << 24);
               break;
             }
             for (int i = 0; i < num; i++) {
@@ -1291,13 +1157,13 @@ public class MovieMaker extends JFrame implements Tool {
             case RGB:
               for (int i = 0; i < num; i++) {
                 pixels[index++] = 0xFF000000 |
-                    is.read() | (is.read() << 8) | (is.read() << 16);
+                  is.read() | (is.read() << 8) | (is.read() << 16);
               }
               break;
             case ARGB:
               for (int i = 0; i < num; i++) {
-                pixels[index++] = is.read() | 
-                    (is.read() << 8) | (is.read() << 16) | (is.read() << 24);
+                pixels[index++] = is.read() |
+                  (is.read() << 8) | (is.read() << 16) | (is.read() << 24);
               }
               break;
             }
@@ -1321,13 +1187,13 @@ public class MovieMaker extends JFrame implements Tool {
       WritableRaster wr = image.getRaster();
       wr.setDataElements(0, 0, w, h, pixels);
       return image;
-      
+
     } finally {
       is.close();
     }
   }
-  
-  
+
+
   /**
    * @param args the command line arguments
    */
@@ -1342,12 +1208,12 @@ public class MovieMaker extends JFrame implements Tool {
       }
     });
   }
-  
+
 
   private JLabel aboutLabel;
   private JButton chooseImageFolderButton;
   private JButton chooseSoundFileButton;
-  private JComboBox<?> compressionBox;
+  private JComboBox<String> compressionBox;
   private JLabel compressionLabel;
 //  private JRadioButton fastStartCompressedRadio;
 //  private JRadioButton fastStartRadio;

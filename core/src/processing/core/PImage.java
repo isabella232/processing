@@ -3,7 +3,7 @@
 /*
   Part of the Processing project - http://processing.org
 
-  Copyright (c) 2004-11 Ben Fry and Casey Reas
+  Copyright (c) 2004-14 Ben Fry and Casey Reas
   Copyright (c) 2001-04 Massachusetts Institute of Technology
 
   This library is free software; you can redistribute it and/or
@@ -94,6 +94,13 @@ public class PImage implements PConstants, Cloneable {
    */
   public int[] pixels;
 
+  /** 1 for most images, 2 for hi-dpi/retina */
+  public int pixelDensity = 1;
+
+  /** Actual dimensions of pixels array, taking into account the 2x setting. */
+  public int pixelWidth;
+  public int pixelHeight;
+
   /**
    * ( begin auto-generated from PImage_width.xml )
    *
@@ -105,6 +112,7 @@ public class PImage implements PConstants, Cloneable {
    * @brief     Image width
    */
   public int width;
+
   /**
    * ( begin auto-generated from PImage_height.xml )
    *
@@ -126,13 +134,6 @@ public class PImage implements PConstants, Cloneable {
 
   // . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
 
-
-  /** for renderers that need to store info about the image */
-  //protected HashMap<PGraphics, Object> cacheMap;
-//  protected WeakHashMap<PGraphics, Object> cacheMap;
-
-  /** for renderers that need to store parameters about the image */
-//  protected HashMap<PGraphics, Object> paramMap;
 
   /** modified portion of the image */
   protected boolean modified;
@@ -194,7 +195,7 @@ public class PImage implements PConstants, Cloneable {
    * To create a new image, use the <b>createImage()</b> function (do not use
    * <b>new PImage()</b>).
    * ( end auto-generated )
-   * @webref image:pimage
+   * @nowebref
    * @usage web_application
    * @see PApplet#loadImage(String, String)
    * @see PApplet#imageMode(int)
@@ -202,16 +203,17 @@ public class PImage implements PConstants, Cloneable {
    */
   public PImage() {
     format = ARGB;  // default to ARGB images for release 0116
-//    cache = null;
+    pixelDensity = 1;
   }
 
 
   /**
+   * @nowebref
    * @param width image width
    * @param height image height
    */
   public PImage(int width, int height) {
-    init(width, height, RGB);
+    init(width, height, RGB, 1);
 
     // toxi: is it maybe better to init the image with max alpha enabled?
     //for(int i=0; i<pixels.length; i++) pixels[i]=0xffffffff;
@@ -223,12 +225,26 @@ public class PImage implements PConstants, Cloneable {
     // toxi: agreed and same reasons why i left it out ;)
   }
 
+
   /**
-   *
+   * @nowebref
    * @param format Either RGB, ARGB, ALPHA (grayscale alpha channel)
    */
   public PImage(int width, int height, int format) {
-    init(width, height, format);
+    init(width, height, format, 1);
+  }
+
+
+  public PImage(int width, int height, int format, int factor) {
+    init(width, height, format, factor);
+  }
+
+
+  /**
+   * Do not remove, see notes in the other variant.
+   */
+  public void init(int width, int height, int format) {  // ignore
+    init(width, height, format, 1);
   }
 
 
@@ -239,12 +255,15 @@ public class PImage implements PConstants, Cloneable {
    * because the width/height will not be known when super() is called.
    * (Leave this public so that other libraries can do the same.)
    */
-  public void init(int width, int height, int format) {  // ignore
+  public void init(int width, int height, int format, int factor) {  // ignore
     this.width = width;
     this.height = height;
-    this.pixels = new int[width*height];
     this.format = format;
-//    this.cache = null;
+    this.pixelDensity = factor;
+
+    pixelWidth = width * pixelDensity;
+    pixelHeight = height * pixelDensity;
+    this.pixels = new int[pixelWidth * pixelHeight];
   }
 
 
@@ -273,6 +292,7 @@ public class PImage implements PConstants, Cloneable {
    * that you've done the work of making sure a MediaTracker has been used
    * to fully download the data and that the img is valid.
    *
+   * @nowebref
    * @param img assumes a MediaTracker has been used to fully download
    * the data and the img is valid
    */
@@ -282,14 +302,31 @@ public class PImage implements PConstants, Cloneable {
       BufferedImage bi = (BufferedImage) img;
       width = bi.getWidth();
       height = bi.getHeight();
-      pixels = new int[width * height];
-      WritableRaster raster = bi.getRaster();
-      raster.getDataElements(0, 0, width, height, pixels);
-      if (bi.getType() == BufferedImage.TYPE_INT_ARGB) {
-        format = ARGB;
+      int type = bi.getType();
+      if (type == BufferedImage.TYPE_3BYTE_BGR ||
+          type == BufferedImage.TYPE_4BYTE_ABGR) {
+        pixels = new int[width * height];
+        bi.getRGB(0, 0, width, height, pixels, 0, width);
+        if (type == BufferedImage.TYPE_4BYTE_ABGR) {
+          format = ARGB;
+        } else {
+          opaque();
+        }
+      } else {
+        DataBuffer db = bi.getRaster().getDataBuffer();
+        if (db instanceof DataBufferInt) {
+          pixels = ((DataBufferInt) db).getData();
+          if (type == BufferedImage.TYPE_INT_ARGB) {
+            format = ARGB;
+          } else if (type == BufferedImage.TYPE_INT_RGB) {
+            opaque();
+          }
+        }
       }
-
-    } else {  // go the old school java 1.0 route
+    }
+    // Implements fall-through if not DataBufferInt above, or not a
+    // known type, or not DataBufferInt for the data itself.
+    if (pixels == null) {  // go the old school Java 1.0 route
       width = img.getWidth(null);
       height = img.getHeight(null);
       pixels = new int[width * height];
@@ -299,6 +336,9 @@ public class PImage implements PConstants, Cloneable {
         pg.grabPixels();
       } catch (InterruptedException e) { }
     }
+    pixelDensity = 1;
+    pixelWidth = width;
+    pixelHeight = height;
   }
 
 
@@ -319,89 +359,11 @@ public class PImage implements PConstants, Cloneable {
     loadPixels();
     int type = (format == RGB) ?
       BufferedImage.TYPE_INT_RGB : BufferedImage.TYPE_INT_ARGB;
-    BufferedImage image = new BufferedImage(width, height, type);
+    BufferedImage image = new BufferedImage(pixelWidth, pixelHeight, type);
     WritableRaster wr = image.getRaster();
-    wr.setDataElements(0, 0, width, height, pixels);
+    wr.setDataElements(0, 0, pixelWidth, pixelHeight, pixels);
     return image;
   }
-
-
-//  //////////////////////////////////////////////////////////////
-//
-//  // METADATA/PARAMETERS REQUIRED BY RENDERERS
-//
-//  /**
-//   * Store data of some kind for a renderer that requires extra metadata of
-//   * some kind. Usually this is a renderer-specific representation of the
-//   * image data, for instance a BufferedImage with tint() settings applied for
-//   * PGraphicsJava2D, or resized image data and OpenGL texture indices for
-//   * PGraphicsOpenGL.
-//   * @param renderer The PGraphics renderer associated to the image
-//   * @param storage The metadata required by the renderer
-//   */
-//  public void setCache(PGraphics renderer, Object storage) {
-//    if (cacheMap == null) cacheMap = new WeakHashMap<PGraphics, Object>();
-//    cacheMap.put(renderer, storage);
-//  }
-//
-//
-//  /**
-//   * Get cache storage data for the specified renderer. Because each renderer
-//   * will cache data in different formats, it's necessary to store cache data
-//   * keyed by the renderer object. Otherwise, attempting to draw the same
-//   * image to both a PGraphicsJava2D and a PGraphicsOpenGL will cause errors.
-//   * @param renderer The PGraphics renderer associated to the image
-//   * @return metadata stored for the specified renderer
-//   */
-//  public Object getCache(PGraphics renderer) {
-//    if (cacheMap == null) return null;
-//    return cacheMap.get(renderer);
-//  }
-//
-//
-//  /**
-//   * Remove information associated with this renderer from the cache, if any.
-//   * @param renderer The PGraphics renderer whose cache data should be removed
-//   */
-//  public void removeCache(PGraphics renderer) {
-//    if (cacheMap != null) {
-//      cacheMap.remove(renderer);
-//    }
-//  }
-
-
-//  /**
-//   * Store parameters for a renderer that requires extra metadata of
-//   * some kind.
-//   * @param renderer The PGraphics renderer associated to the image
-//   * @param storage The parameters required by the renderer
-//   */
-//  public void setParams(PGraphics renderer, Object params) {
-//    if (paramMap == null) paramMap = new HashMap<PGraphics, Object>();
-//    paramMap.put(renderer, params);
-//  }
-//
-//
-//  /**
-//   * Get the parameters for the specified renderer.
-//   * @param renderer The PGraphics renderer associated to the image
-//   * @return parameters stored for the specified renderer
-//   */
-//  public Object getParams(PGraphics renderer) {
-//    if (paramMap == null) return null;
-//    return paramMap.get(renderer);
-//  }
-//
-//
-//  /**
-//   * Remove information associated with this renderer from the cache, if any.
-//   * @param renderer The PGraphics renderer whose parameters should be removed
-//   */
-//  public void removeParams(PGraphics renderer) {
-//    if (paramMap != null) {
-//      paramMap.remove(renderer);
-//    }
-//  }
 
 
   //////////////////////////////////////////////////////////////
@@ -418,8 +380,8 @@ public class PImage implements PConstants, Cloneable {
     modified = true;
     mx1 = 0;
     my1 = 0;
-    mx2 = width;
-    my2 = height;
+    mx2 = pixelWidth;
+    my2 = pixelHeight;
   }
 
 
@@ -474,16 +436,15 @@ public class PImage implements PConstants, Cloneable {
    * @usage web_application
    */
   public void loadPixels() {  // ignore
-    if (pixels == null || pixels.length != width*height) {
-      pixels = new int[width*height];
+    if (pixels == null || pixels.length != pixelWidth*pixelHeight) {
+      pixels = new int[pixelWidth*pixelHeight];
     }
     setLoaded();
   }
 
 
   public void updatePixels() {  // ignore
-//    updatePixelsImpl(0, 0, width, height);
-    updatePixels(0, 0, width, height);
+    updatePixels(0, 0, pixelWidth, pixelHeight);
   }
 
 
@@ -519,41 +480,26 @@ public class PImage implements PConstants, Cloneable {
    * @param h height
    */
   public void updatePixels(int x, int y, int w, int h) {  // ignore
-//    updatePixelsImpl(x, y, w, h);
-//  }
-//
-//
-//  /**
-//   * Broken out as separate impl to signify that the w/y/w/h numbers have
-//   * already been tested and their bounds set properly.
-//   */
-//  protected void updatePixelsImpl(int x, int y, int w, int h) {
     int x2 = x + w;
     int y2 = y + h;
 
     if (!modified) {
       mx1 = PApplet.max(0, x);
-      //mx2 = PApplet.min(width - 1, x2);
-      mx2 = PApplet.min(width, x2);
+      mx2 = PApplet.min(pixelWidth, x2);
       my1 = PApplet.max(0, y);
-      //my2 = PApplet.min(height - 1, y2);
-      my2 = PApplet.min(height, y2);
+      my2 = PApplet.min(pixelHeight, y2);
       modified = true;
 
     } else {
       if (x < mx1) mx1 = PApplet.max(0, x);
-      //if (x > mx2) mx2 = PApplet.min(width - 1, x);
-      if (x > mx2) mx2 = PApplet.min(width, x);
+      if (x > mx2) mx2 = PApplet.min(pixelWidth, x);
       if (y < my1) my1 = PApplet.max(0, y);
-      //if (y > my2) my2 = y;
-      if (y > my2) my2 = PApplet.min(height, y);
+      if (y > my2) my2 = PApplet.min(pixelHeight, y);
 
       if (x2 < mx1) mx1 = PApplet.max(0, x2);
-      //if (x2 > mx2) mx2 = PApplet.min(width - 1, x2);
-      if (x2 > mx2) mx2 = PApplet.min(width, x2);
+      if (x2 > mx2) mx2 = PApplet.min(pixelWidth, x2);
       if (y2 < my1) my1 = PApplet.max(0, y2);
-      //if (y2 > my2) my2 = PApplet.min(height - 1, y2);
-      if (y2 > my2) my2 = PApplet.min(height, y2);
+      if (y2 > my2) my2 = PApplet.min(pixelHeight, y2);
     }
   }
 
@@ -613,20 +559,18 @@ public class PImage implements PConstants, Cloneable {
       h = (int) (height * diff);
     }
 
-    BufferedImage img = shrinkImage((BufferedImage) getNative(), w, h);
-//    BufferedImage img = null;
-//    if (w < width && h < height) {
-//      img = shrinkImage((BufferedImage) getNative(), w, h);
-//    } else {
-//      img = resampleImage((BufferedImage) getNative(), w, h);
-//    }
+    BufferedImage img =
+      shrinkImage((BufferedImage) getNative(), w*pixelDensity, h*pixelDensity);
 
     PImage temp = new PImage(img);
-    this.width = temp.width;
-    this.height = temp.height;
+    this.pixelWidth = temp.width;
+    this.pixelHeight = temp.height;
 
     // Get the resized pixel array
     this.pixels = temp.pixels;
+
+    this.width = pixelWidth / pixelDensity;
+    this.height = pixelHeight / pixelDensity;
 
     // Mark the pixels array as altered
     updatePixels();
@@ -781,17 +725,17 @@ public class PImage implements PConstants, Cloneable {
    * @see PApplet#copy(PImage, int, int, int, int, int, int, int, int)
    */
   public int get(int x, int y) {
-    if ((x < 0) || (y < 0) || (x >= width) || (y >= height)) return 0;
+    if ((x < 0) || (y < 0) || (x >= pixelWidth) || (y >= pixelHeight)) return 0;
 
     switch (format) {
       case RGB:
-        return pixels[y*width + x] | 0xff000000;
+        return pixels[y*pixelWidth + x] | 0xff000000;
 
       case ARGB:
-        return pixels[y*width + x];
+        return pixels[y*pixelWidth + x];
 
       case ALPHA:
-        return (pixels[y*width + x] << 24) | 0xffffff;
+        return (pixels[y*pixelWidth + x] << 24) | 0xffffff;
     }
     return 0;
   }
@@ -821,12 +765,12 @@ public class PImage implements PConstants, Cloneable {
       y = 0;
     }
 
-    if (x + w > width) {
-      w = width - x;
+    if (x + w > pixelWidth) {
+      w = pixelWidth - x;
       cropped = true;
     }
-    if (y + h > height) {
-      h = height - y;
+    if (y + h > pixelHeight) {
+      h = pixelHeight - y;
       cropped = true;
     }
 
@@ -842,7 +786,9 @@ public class PImage implements PConstants, Cloneable {
       targetFormat = ARGB;
     }
 
-    PImage target = new PImage(targetWidth, targetHeight, targetFormat);
+    PImage target = new PImage(targetWidth / pixelDensity,
+                               targetHeight / pixelDensity,
+                               targetFormat, pixelDensity);
     target.parent = parent;  // parent may be null so can't use createImage()
     if (w > 0 && h > 0) {
       getImpl(x, y, w, h, target, targetX, targetY);
@@ -853,11 +799,17 @@ public class PImage implements PConstants, Cloneable {
 
   /**
    * Returns a copy of this PImage. Equivalent to get(0, 0, width, height).
+   * Deprecated, just use copy() instead.
    */
   public PImage get() {
     // Formerly this used clone(), which caused memory problems.
     // http://code.google.com/p/processing/issues/detail?id=42
-    return get(0, 0, width, height);
+    return get(0, 0, pixelWidth, pixelHeight);
+  }
+
+
+  public PImage copy() {
+    return get(0, 0, pixelWidth, pixelHeight);
   }
 
 
@@ -870,12 +822,12 @@ public class PImage implements PConstants, Cloneable {
   protected void getImpl(int sourceX, int sourceY,
                          int sourceWidth, int sourceHeight,
                          PImage target, int targetX, int targetY) {
-    int sourceIndex = sourceY*width + sourceX;
-    int targetIndex = targetY*target.width + targetX;
+    int sourceIndex = sourceY*pixelWidth + sourceX;
+    int targetIndex = targetY*target.pixelWidth + targetX;
     for (int row = 0; row < sourceHeight; row++) {
       System.arraycopy(pixels, sourceIndex, target.pixels, targetIndex, sourceWidth);
-      sourceIndex += width;
-      targetIndex += target.width;
+      sourceIndex += pixelWidth;
+      targetIndex += target.pixelWidth;
     }
   }
 
@@ -912,10 +864,9 @@ public class PImage implements PConstants, Cloneable {
    * @see PImage#copy(PImage, int, int, int, int, int, int, int, int)
    */
   public void set(int x, int y, int c) {
-    if ((x < 0) || (y < 0) || (x >= width) || (y >= height)) return;
-    pixels[y*width + x] = c;
-    //updatePixelsImpl(x, y, 1, 1);  // slow?
-    updatePixels(x, y, 1, 1);  // slow?
+    if ((x < 0) || (y < 0) || (x >= pixelWidth) || (y >= pixelHeight)) return;
+    pixels[y*pixelWidth + x] = c;
+    updatePixels(x, y, 1, 1);  // slow...
   }
 
 
@@ -930,8 +881,8 @@ public class PImage implements PConstants, Cloneable {
   public void set(int x, int y, PImage img) {
     int sx = 0;
     int sy = 0;
-    int sw = img.width;
-    int sh = img.height;
+    int sw = img.pixelWidth;
+    int sh = img.pixelHeight;
 
     if (x < 0) {  // off left edge
       sx -= x;
@@ -943,11 +894,11 @@ public class PImage implements PConstants, Cloneable {
       sh += y;
       y = 0;
     }
-    if (x + sw > width) {  // off right edge
-      sw = width - x;
+    if (x + sw > pixelWidth) {  // off right edge
+      sw = pixelWidth - x;
     }
-    if (y + sh > height) {  // off bottom edge
-      sh = height - y;
+    if (y + sh > pixelHeight) {  // off bottom edge
+      sh = pixelHeight - y;
     }
 
     // this could be nonexistent
@@ -965,13 +916,13 @@ public class PImage implements PConstants, Cloneable {
                          int sourceX, int sourceY,
                          int sourceWidth, int sourceHeight,
                          int targetX, int targetY) {
-    int sourceOffset = sourceY * sourceImage.width + sourceX;
-    int targetOffset = targetY * width + targetX;
+    int sourceOffset = sourceY * sourceImage.pixelWidth + sourceX;
+    int targetOffset = targetY * pixelWidth + targetX;
 
     for (int y = sourceY; y < sourceY + sourceHeight; y++) {
       System.arraycopy(sourceImage.pixels, sourceOffset, pixels, targetOffset, sourceWidth);
-      sourceOffset += sourceImage.width;
-      targetOffset += width;
+      sourceOffset += sourceImage.pixelWidth;
+      targetOffset += pixelWidth;
     }
 
     //updatePixelsImpl(targetX, targetY, sourceWidth, sourceHeight);
@@ -990,7 +941,7 @@ public class PImage implements PConstants, Cloneable {
     loadPixels();
     // don't execute if mask image is different size
     if (maskArray.length != pixels.length) {
-      throw new RuntimeException("mask() can only be used with an image that's the same size.");
+      throw new IllegalArgumentException("mask() can only be used with an image that's the same size.");
     }
     for (int i = 0; i < pixels.length; i++) {
       pixels[i] = ((maskArray[i] & 0xff) << 24) | (pixels[i] & 0xffffff);
@@ -1105,13 +1056,13 @@ public class PImage implements PConstants, Cloneable {
         filter(THRESHOLD, 0.5f);
         break;
 
-        // [toxi20050728] added new filters
+        // [toxi 050728] added new filters
       case ERODE:
-        dilate(true);
+        erode();  // former dilate(true);
         break;
 
       case DILATE:
-        dilate(false);
+        dilate();  // former dilate(false);
         break;
     }
     updatePixels();  // mark as modified
@@ -1240,6 +1191,14 @@ public class PImage implements PConstants, Cloneable {
   }
 
 
+  /** Set the high bits of all pixels to opaque. */
+  protected void opaque() {
+    for (int i = 0; i < pixels.length; i++) {
+      pixels[i] = 0xFF000000 | pixels[i];
+    }
+  }
+
+
   /**
    * Optimized code for building the blur kernel.
    * further optimized blur code (approx. 15% for radius=20)
@@ -1282,8 +1241,8 @@ public class PImage implements PConstants, Cloneable {
 
     buildBlurKernel(r);
 
-    for (int y = 0; y < height; y++) {
-      for (int x = 0; x < width; x++) {
+    for (int y = 0; y < pixelHeight; y++) {
+      for (int x = 0; x < pixelWidth; x++) {
         //cb = cg = cr = sum = 0;
         cb = sum = 0;
         read = x - blurRadius;
@@ -1291,15 +1250,15 @@ public class PImage implements PConstants, Cloneable {
           bk0=-read;
           read=0;
         } else {
-          if (read >= width)
+          if (read >= pixelWidth)
             break;
           bk0=0;
         }
         for (int i = bk0; i < blurKernelSize; i++) {
-          if (read >= width)
+          if (read >= pixelWidth)
             break;
           int c = pixels[read + yi];
-          int[] bm=blurMult[i];
+          int[] bm = blurMult[i];
           cb += bm[c & BLUE_MASK];
           sum += blurKernel[i];
           read++;
@@ -1307,40 +1266,39 @@ public class PImage implements PConstants, Cloneable {
         ri = yi + x;
         b2[ri] = cb / sum;
       }
-      yi += width;
+      yi += pixelWidth;
     }
 
     yi = 0;
-    ym=-blurRadius;
-    ymi=ym*width;
+    ym = -blurRadius;
+    ymi = ym * pixelWidth;
 
-    for (int y = 0; y < height; y++) {
-      for (int x = 0; x < width; x++) {
-        //cb = cg = cr = sum = 0;
+    for (int y = 0; y < pixelHeight; y++) {
+      for (int x = 0; x < pixelWidth; x++) {
         cb = sum = 0;
-        if (ym<0) {
+        if (ym < 0) {
           bk0 = ri = -ym;
           read = x;
         } else {
-          if (ym >= height)
+          if (ym >= pixelHeight)
             break;
           bk0 = 0;
           ri = ym;
           read = x + ymi;
         }
         for (int i = bk0; i < blurKernelSize; i++) {
-          if (ri >= height)
+          if (ri >= pixelHeight)
             break;
-          int[] bm=blurMult[i];
+          int[] bm = blurMult[i];
           cb += bm[b2[read]];
           sum += blurKernel[i];
           ri++;
-          read += width;
+          read += pixelWidth;
         }
         pixels[x+yi] = (cb/sum);
       }
-      yi += width;
-      ymi += width;
+      yi += pixelWidth;
+      ymi += pixelWidth;
       ym++;
     }
   }
@@ -1356,23 +1314,25 @@ public class PImage implements PConstants, Cloneable {
 
     buildBlurKernel(r);
 
-    for (int y = 0; y < height; y++) {
-      for (int x = 0; x < width; x++) {
+    for (int y = 0; y < pixelHeight; y++) {
+      for (int x = 0; x < pixelWidth; x++) {
         cb = cg = cr = sum = 0;
         read = x - blurRadius;
-        if (read<0) {
-          bk0=-read;
-          read=0;
+        if (read < 0) {
+          bk0 = -read;
+          read = 0;
         } else {
-          if (read >= width)
+          if (read >= pixelWidth) {
             break;
-          bk0=0;
+          }
+          bk0 = 0;
         }
         for (int i = bk0; i < blurKernelSize; i++) {
-          if (read >= width)
+          if (read >= pixelWidth) {
             break;
+          }
           int c = pixels[read + yi];
-          int[] bm=blurMult[i];
+          int[] bm = blurMult[i];
           cr += bm[(c & RED_MASK) >> 16];
           cg += bm[(c & GREEN_MASK) >> 8];
           cb += bm[c & BLUE_MASK];
@@ -1384,41 +1344,43 @@ public class PImage implements PConstants, Cloneable {
         g2[ri] = cg / sum;
         b2[ri] = cb / sum;
       }
-      yi += width;
+      yi += pixelWidth;
     }
 
     yi = 0;
-    ym=-blurRadius;
-    ymi=ym*width;
+    ym = -blurRadius;
+    ymi = ym * pixelWidth;
 
-    for (int y = 0; y < height; y++) {
-      for (int x = 0; x < width; x++) {
+    for (int y = 0; y < pixelHeight; y++) {
+      for (int x = 0; x < pixelWidth; x++) {
         cb = cg = cr = sum = 0;
-        if (ym<0) {
+        if (ym < 0) {
           bk0 = ri = -ym;
           read = x;
         } else {
-          if (ym >= height)
+          if (ym >= pixelHeight) {
             break;
+          }
           bk0 = 0;
           ri = ym;
           read = x + ymi;
         }
         for (int i = bk0; i < blurKernelSize; i++) {
-          if (ri >= height)
+          if (ri >= pixelHeight) {
             break;
-          int[] bm=blurMult[i];
+          }
+          int[] bm = blurMult[i];
           cr += bm[r2[read]];
           cg += bm[g2[read]];
           cb += bm[b2[read]];
           sum += blurKernel[i];
           ri++;
-          read += width;
+          read += pixelWidth;
         }
         pixels[x+yi] = 0xff000000 | (cr/sum)<<16 | (cg/sum)<<8 | (cb/sum);
       }
-      yi += width;
-      ymi += width;
+      yi += pixelWidth;
+      ymi += pixelWidth;
       ym++;
     }
   }
@@ -1436,21 +1398,23 @@ public class PImage implements PConstants, Cloneable {
 
     buildBlurKernel(r);
 
-    for (int y = 0; y < height; y++) {
-      for (int x = 0; x < width; x++) {
+    for (int y = 0; y < pixelHeight; y++) {
+      for (int x = 0; x < pixelWidth; x++) {
         cb = cg = cr = ca = sum = 0;
         read = x - blurRadius;
-        if (read<0) {
-          bk0=-read;
-          read=0;
+        if (read < 0) {
+          bk0 = -read;
+          read = 0;
         } else {
-          if (read >= width)
+          if (read >= pixelWidth) {
             break;
+          }
           bk0=0;
         }
         for (int i = bk0; i < blurKernelSize; i++) {
-          if (read >= width)
+          if (read >= pixelWidth) {
             break;
+          }
           int c = pixels[read + yi];
           int[] bm=blurMult[i];
           ca += bm[(c & ALPHA_MASK) >>> 24];
@@ -1466,29 +1430,31 @@ public class PImage implements PConstants, Cloneable {
         g2[ri] = cg / sum;
         b2[ri] = cb / sum;
       }
-      yi += width;
+      yi += pixelWidth;
     }
 
     yi = 0;
-    ym=-blurRadius;
-    ymi=ym*width;
+    ym = -blurRadius;
+    ymi = ym * pixelWidth;
 
-    for (int y = 0; y < height; y++) {
-      for (int x = 0; x < width; x++) {
+    for (int y = 0; y < pixelHeight; y++) {
+      for (int x = 0; x < pixelWidth; x++) {
         cb = cg = cr = ca = sum = 0;
-        if (ym<0) {
+        if (ym < 0) {
           bk0 = ri = -ym;
           read = x;
         } else {
-          if (ym >= height)
+          if (ym >= pixelHeight) {
             break;
+          }
           bk0 = 0;
           ri = ym;
           read = x + ymi;
         }
         for (int i = bk0; i < blurKernelSize; i++) {
-          if (ri >= height)
+          if (ri >= pixelHeight) {
             break;
+          }
           int[] bm=blurMult[i];
           ca += bm[a2[read]];
           cr += bm[r2[read]];
@@ -1496,12 +1462,12 @@ public class PImage implements PConstants, Cloneable {
           cb += bm[b2[read]];
           sum += blurKernel[i];
           ri++;
-          read += width;
+          read += pixelWidth;
         }
         pixels[x+yi] = (ca/sum)<<24 | (cr/sum)<<16 | (cg/sum)<<8 | (cb/sum);
       }
-      yi += width;
-      ymi += width;
+      yi += pixelWidth;
+      ymi += pixelWidth;
       ym++;
     }
   }
@@ -1511,127 +1477,141 @@ public class PImage implements PConstants, Cloneable {
    * Generic dilate/erode filter using luminance values
    * as decision factor. [toxi 050728]
    */
-  protected void dilate(boolean isInverted) {
-    int currIdx=0;
-    int maxIdx=pixels.length;
-    int[] out=new int[maxIdx];
+  protected void dilate() {  // formerly dilate(false)
+    int index = 0;
+    int maxIndex = pixels.length;
+    int[] outgoing = new int[maxIndex];
 
-    if (!isInverted) {
-      // erosion (grow light areas)
-      while (currIdx<maxIdx) {
-        int currRowIdx=currIdx;
-        int maxRowIdx=currIdx+width;
-        while (currIdx<maxRowIdx) {
-          int colOrig,colOut;
-          colOrig=colOut=pixels[currIdx];
-          int idxLeft=currIdx-1;
-          int idxRight=currIdx+1;
-          int idxUp=currIdx-width;
-          int idxDown=currIdx+width;
-          if (idxLeft<currRowIdx)
-            idxLeft=currIdx;
-          if (idxRight>=maxRowIdx)
-            idxRight=currIdx;
-          if (idxUp<0)
-            idxUp=currIdx;
-          if (idxDown>=maxIdx)
-            idxDown=currIdx;
-
-          int colUp=pixels[idxUp];
-          int colLeft=pixels[idxLeft];
-          int colDown=pixels[idxDown];
-          int colRight=pixels[idxRight];
-
-          // compute luminance
-          int currLum =
-            77*(colOrig>>16&0xff) + 151*(colOrig>>8&0xff) + 28*(colOrig&0xff);
-          int lumLeft =
-            77*(colLeft>>16&0xff) + 151*(colLeft>>8&0xff) + 28*(colLeft&0xff);
-          int lumRight =
-            77*(colRight>>16&0xff) + 151*(colRight>>8&0xff) + 28*(colRight&0xff);
-          int lumUp =
-            77*(colUp>>16&0xff) + 151*(colUp>>8&0xff) + 28*(colUp&0xff);
-          int lumDown =
-            77*(colDown>>16&0xff) + 151*(colDown>>8&0xff) + 28*(colDown&0xff);
-
-          if (lumLeft>currLum) {
-            colOut=colLeft;
-            currLum=lumLeft;
-          }
-          if (lumRight>currLum) {
-            colOut=colRight;
-            currLum=lumRight;
-          }
-          if (lumUp>currLum) {
-            colOut=colUp;
-            currLum=lumUp;
-          }
-          if (lumDown>currLum) {
-            colOut=colDown;
-            currLum=lumDown;
-          }
-          out[currIdx++]=colOut;
+    // erosion (grow light areas)
+    while (index < maxIndex) {
+      int curRowIndex = index;
+      int maxRowIndex = index + pixelWidth;
+      while (index < maxRowIndex) {
+        int orig = pixels[index];
+        int result = orig;
+        int idxLeft = index - 1;
+        int idxRight = index + 1;
+        int idxUp = index - pixelWidth;
+        int idxDown = index + pixelWidth;
+        if (idxLeft < curRowIndex) {
+          idxLeft = index;
         }
-      }
-    } else {
-      // dilate (grow dark areas)
-      while (currIdx<maxIdx) {
-        int currRowIdx=currIdx;
-        int maxRowIdx=currIdx+width;
-        while (currIdx<maxRowIdx) {
-          int colOrig,colOut;
-          colOrig=colOut=pixels[currIdx];
-          int idxLeft=currIdx-1;
-          int idxRight=currIdx+1;
-          int idxUp=currIdx-width;
-          int idxDown=currIdx+width;
-          if (idxLeft<currRowIdx)
-            idxLeft=currIdx;
-          if (idxRight>=maxRowIdx)
-            idxRight=currIdx;
-          if (idxUp<0)
-            idxUp=currIdx;
-          if (idxDown>=maxIdx)
-            idxDown=currIdx;
-
-          int colUp=pixels[idxUp];
-          int colLeft=pixels[idxLeft];
-          int colDown=pixels[idxDown];
-          int colRight=pixels[idxRight];
-
-          // compute luminance
-          int currLum =
-            77*(colOrig>>16&0xff) + 151*(colOrig>>8&0xff) + 28*(colOrig&0xff);
-          int lumLeft =
-            77*(colLeft>>16&0xff) + 151*(colLeft>>8&0xff) + 28*(colLeft&0xff);
-          int lumRight =
-            77*(colRight>>16&0xff) + 151*(colRight>>8&0xff) + 28*(colRight&0xff);
-          int lumUp =
-            77*(colUp>>16&0xff) + 151*(colUp>>8&0xff) + 28*(colUp&0xff);
-          int lumDown =
-            77*(colDown>>16&0xff) + 151*(colDown>>8&0xff) + 28*(colDown&0xff);
-
-          if (lumLeft<currLum) {
-            colOut=colLeft;
-            currLum=lumLeft;
-          }
-          if (lumRight<currLum) {
-            colOut=colRight;
-            currLum=lumRight;
-          }
-          if (lumUp<currLum) {
-            colOut=colUp;
-            currLum=lumUp;
-          }
-          if (lumDown<currLum) {
-            colOut=colDown;
-            currLum=lumDown;
-          }
-          out[currIdx++]=colOut;
+        if (idxRight >= maxRowIndex) {
+          idxRight = index;
         }
+        if (idxUp < 0) {
+          idxUp = index;
+        }
+        if (idxDown >= maxIndex) {
+          idxDown = index;
+        }
+
+        int colUp = pixels[idxUp];
+        int colLeft = pixels[idxLeft];
+        int colDown = pixels[idxDown];
+        int colRight = pixels[idxRight];
+
+        // compute luminance
+        int currLum =
+          77*(orig>>16&0xff) + 151*(orig>>8&0xff) + 28*(orig&0xff);
+        int lumLeft =
+          77*(colLeft>>16&0xff) + 151*(colLeft>>8&0xff) + 28*(colLeft&0xff);
+        int lumRight =
+          77*(colRight>>16&0xff) + 151*(colRight>>8&0xff) + 28*(colRight&0xff);
+        int lumUp =
+          77*(colUp>>16&0xff) + 151*(colUp>>8&0xff) + 28*(colUp&0xff);
+        int lumDown =
+          77*(colDown>>16&0xff) + 151*(colDown>>8&0xff) + 28*(colDown&0xff);
+
+        if (lumLeft > currLum) {
+          result = colLeft;
+          currLum = lumLeft;
+        }
+        if (lumRight > currLum) {
+          result = colRight;
+          currLum = lumRight;
+        }
+        if (lumUp > currLum) {
+          result = colUp;
+          currLum = lumUp;
+        }
+        if (lumDown > currLum) {
+          result = colDown;
+          currLum = lumDown;
+        }
+        outgoing[index++] = result;
       }
     }
-    System.arraycopy(out,0,pixels,0,maxIdx);
+    System.arraycopy(outgoing, 0, pixels, 0, maxIndex);
+  }
+
+
+  protected void erode() {  // formerly dilate(true)
+    int index = 0;
+    int maxIndex = pixels.length;
+    int[] outgoing = new int[maxIndex];
+
+    // dilate (grow dark areas)
+    while (index < maxIndex) {
+      int curRowIndex = index;
+      int maxRowIndex = index + pixelWidth;
+      while (index < maxRowIndex) {
+        int orig = pixels[index];
+        int result = orig;
+        int idxLeft = index - 1;
+        int idxRight = index + 1;
+        int idxUp = index - pixelWidth;
+        int idxDown = index + pixelWidth;
+        if (idxLeft < curRowIndex) {
+          idxLeft = index;
+        }
+        if (idxRight >= maxRowIndex) {
+          idxRight = index;
+        }
+        if (idxUp < 0) {
+          idxUp = index;
+        }
+        if (idxDown >= maxIndex) {
+          idxDown = index;
+        }
+
+        int colUp = pixels[idxUp];
+        int colLeft = pixels[idxLeft];
+        int colDown = pixels[idxDown];
+        int colRight = pixels[idxRight];
+
+        // compute luminance
+        int currLum =
+          77*(orig>>16&0xff) + 151*(orig>>8&0xff) + 28*(orig&0xff);
+        int lumLeft =
+          77*(colLeft>>16&0xff) + 151*(colLeft>>8&0xff) + 28*(colLeft&0xff);
+        int lumRight =
+          77*(colRight>>16&0xff) + 151*(colRight>>8&0xff) + 28*(colRight&0xff);
+        int lumUp =
+          77*(colUp>>16&0xff) + 151*(colUp>>8&0xff) + 28*(colUp&0xff);
+        int lumDown =
+          77*(colDown>>16&0xff) + 151*(colDown>>8&0xff) + 28*(colDown&0xff);
+
+        if (lumLeft < currLum) {
+          result = colLeft;
+          currLum = lumLeft;
+        }
+        if (lumRight < currLum) {
+          result = colRight;
+          currLum = lumRight;
+        }
+        if (lumUp < currLum) {
+          result = colUp;
+          currLum = lumUp;
+        }
+        if (lumDown < currLum) {
+          result = colDown;
+          currLum = lumDown;
+        }
+        outgoing[index++] = result;
+      }
+    }
+    System.arraycopy(outgoing, 0, pixels, 0, maxIndex);
   }
 
 
@@ -1874,24 +1854,6 @@ public class PImage implements PConstants, Cloneable {
   public void blend(PImage src,
                     int sx, int sy, int sw, int sh,
                     int dx, int dy, int dw, int dh, int mode) {
-    /*
-    if (imageMode == CORNER) {  // if CORNERS, do nothing
-      sx2 += sx1;
-      sy2 += sy1;
-      dx2 += dx1;
-      dy2 += dy1;
-
-    } else if (imageMode == CENTER) {
-      sx1 -= sx2 / 2f;
-      sy1 -= sy2 / 2f;
-      sx2 += sx1;
-      sy2 += sy1;
-      dx1 -= dx2 / 2f;
-      dy1 -= dy2 / 2f;
-      dx2 += dx1;
-      dy2 += dy1;
-    }
-    */
     int sx2 = sx + sw;
     int sy2 = sy + sh;
     int dx2 = dx + dw;
@@ -1900,18 +1862,18 @@ public class PImage implements PConstants, Cloneable {
     loadPixels();
     if (src == this) {
       if (intersect(sx, sy, sx2, sy2, dx, dy, dx2, dy2)) {
-        blit_resize(get(sx, sy, sx2 - sx, sy2 - sy),
-                    0, 0, sx2 - sx - 1, sy2 - sy - 1,
-                    pixels, width, height, dx, dy, dx2, dy2, mode);
+        blit_resize(get(sx, sy, sw, sh),
+                    0, 0, sw, sh,
+                    pixels, pixelWidth, pixelHeight, dx, dy, dx2, dy2, mode);
       } else {
         // same as below, except skip the loadPixels() because it'd be redundant
         blit_resize(src, sx, sy, sx2, sy2,
-                    pixels, width, height, dx, dy, dx2, dy2, mode);
+                    pixels, pixelWidth, pixelHeight, dx, dy, dx2, dy2, mode);
       }
     } else {
       src.loadPixels();
       blit_resize(src, sx, sy, sx2, sy2,
-                  pixels, width, height, dx, dy, dx2, dy2, mode);
+                  pixels, pixelWidth, pixelHeight, dx, dy, dx2, dy2, mode);
       //src.updatePixels();
     }
     updatePixels();
@@ -1969,8 +1931,8 @@ public class PImage implements PConstants, Cloneable {
                            int mode) {
     if (srcX1 < 0) srcX1 = 0;
     if (srcY1 < 0) srcY1 = 0;
-    if (srcX2 > img.width) srcX2 = img.width;
-    if (srcY2 > img.height) srcY2 = img.height;
+    if (srcX2 > img.pixelWidth) srcX2 = img.pixelWidth;
+    if (srcY2 > img.pixelHeight) srcY2 = img.pixelHeight;
 
     int srcW = srcX2 - srcX1;
     int srcH = srcY2 - srcY1;
@@ -1986,7 +1948,7 @@ public class PImage implements PConstants, Cloneable {
     if (destW <= 0 || destH <= 0 ||
         srcW <= 0 || srcH <= 0 ||
         destX1 >= screenW || destY1 >= screenH ||
-        srcX1 >= img.width || srcY1 >= img.height) {
+        srcX1 >= img.pixelWidth || srcY1 >= img.pixelHeight) {
       return;
     }
 
@@ -2005,17 +1967,17 @@ public class PImage implements PConstants, Cloneable {
       destY1 = 0;
     }
 
-    destW = low(destW, screenW - destX1);
-    destH = low(destH, screenH - destY1);
+    destW = min(destW, screenW - destX1);
+    destH = min(destH, screenH - destY1);
 
     int destOffset = destY1 * screenW + destX1;
     srcBuffer = img.pixels;
 
     if (smooth) {
       // use bilinear filtering
-      iw = img.width;
-      iw1 = img.width - 1;
-      ih1 = img.height - 1;
+      iw = img.pixelWidth;
+      iw1 = img.pixelWidth - 1;
+      ih1 = img.pixelHeight - 1;
 
       switch (mode) {
 
@@ -2224,12 +2186,12 @@ public class PImage implements PConstants, Cloneable {
       case BLEND:
         for (int y = 0; y < destH; y++) {
           sX = srcXOffset;
-          sY = (srcYOffset >> PRECISIONB) * img.width;
+          sY = (srcYOffset >> PRECISIONB) * img.pixelWidth;
           for (int x = 0; x < destW; x++) {
             // davbol - renamed old blend_multiply to blend_blend
             destPixels[destOffset + x] =
               blend_blend(destPixels[destOffset + x],
-                             srcBuffer[sY + (sX >> PRECISIONB)]);
+                          srcBuffer[sY + (sX >> PRECISIONB)]);
             sX += dx;
           }
           destOffset += screenW;
@@ -2240,7 +2202,7 @@ public class PImage implements PConstants, Cloneable {
       case ADD:
         for (int y = 0; y < destH; y++) {
           sX = srcXOffset;
-          sY = (srcYOffset >> PRECISIONB) * img.width;
+          sY = (srcYOffset >> PRECISIONB) * img.pixelWidth;
           for (int x = 0; x < destW; x++) {
             destPixels[destOffset + x] =
               blend_add_pin(destPixels[destOffset + x],
@@ -2255,7 +2217,7 @@ public class PImage implements PConstants, Cloneable {
       case SUBTRACT:
         for (int y = 0; y < destH; y++) {
           sX = srcXOffset;
-          sY = (srcYOffset >> PRECISIONB) * img.width;
+          sY = (srcYOffset >> PRECISIONB) * img.pixelWidth;
           for (int x = 0; x < destW; x++) {
             destPixels[destOffset + x] =
               blend_sub_pin(destPixels[destOffset + x],
@@ -2270,7 +2232,7 @@ public class PImage implements PConstants, Cloneable {
       case LIGHTEST:
         for (int y = 0; y < destH; y++) {
           sX = srcXOffset;
-          sY = (srcYOffset >> PRECISIONB) * img.width;
+          sY = (srcYOffset >> PRECISIONB) * img.pixelWidth;
           for (int x = 0; x < destW; x++) {
             destPixels[destOffset + x] =
               blend_lightest(destPixels[destOffset + x],
@@ -2285,7 +2247,7 @@ public class PImage implements PConstants, Cloneable {
       case DARKEST:
         for (int y = 0; y < destH; y++) {
           sX = srcXOffset;
-          sY = (srcYOffset >> PRECISIONB) * img.width;
+          sY = (srcYOffset >> PRECISIONB) * img.pixelWidth;
           for (int x = 0; x < destW; x++) {
             destPixels[destOffset + x] =
               blend_darkest(destPixels[destOffset + x],
@@ -2300,7 +2262,7 @@ public class PImage implements PConstants, Cloneable {
       case REPLACE:
         for (int y = 0; y < destH; y++) {
           sX = srcXOffset;
-          sY = (srcYOffset >> PRECISIONB) * img.width;
+          sY = (srcYOffset >> PRECISIONB) * img.pixelWidth;
           for (int x = 0; x < destW; x++) {
             destPixels[destOffset + x] = srcBuffer[sY + (sX >> PRECISIONB)];
             sX += dx;
@@ -2313,7 +2275,7 @@ public class PImage implements PConstants, Cloneable {
       case DIFFERENCE:
         for (int y = 0; y < destH; y++) {
           sX = srcXOffset;
-          sY = (srcYOffset >> PRECISIONB) * img.width;
+          sY = (srcYOffset >> PRECISIONB) * img.pixelWidth;
           for (int x = 0; x < destW; x++) {
             destPixels[destOffset + x] =
               blend_difference(destPixels[destOffset + x],
@@ -2328,7 +2290,7 @@ public class PImage implements PConstants, Cloneable {
       case EXCLUSION:
         for (int y = 0; y < destH; y++) {
           sX = srcXOffset;
-          sY = (srcYOffset >> PRECISIONB) * img.width;
+          sY = (srcYOffset >> PRECISIONB) * img.pixelWidth;
           for (int x = 0; x < destW; x++) {
             destPixels[destOffset + x] =
               blend_exclusion(destPixels[destOffset + x],
@@ -2343,7 +2305,7 @@ public class PImage implements PConstants, Cloneable {
       case MULTIPLY:
         for (int y = 0; y < destH; y++) {
           sX = srcXOffset;
-          sY = (srcYOffset >> PRECISIONB) * img.width;
+          sY = (srcYOffset >> PRECISIONB) * img.pixelWidth;
           for (int x = 0; x < destW; x++) {
             destPixels[destOffset + x] =
               blend_multiply(destPixels[destOffset + x],
@@ -2358,7 +2320,7 @@ public class PImage implements PConstants, Cloneable {
       case SCREEN:
         for (int y = 0; y < destH; y++) {
           sX = srcXOffset;
-          sY = (srcYOffset >> PRECISIONB) * img.width;
+          sY = (srcYOffset >> PRECISIONB) * img.pixelWidth;
           for (int x = 0; x < destW; x++) {
             destPixels[destOffset + x] =
               blend_screen(destPixels[destOffset + x],
@@ -2373,7 +2335,7 @@ public class PImage implements PConstants, Cloneable {
       case OVERLAY:
         for (int y = 0; y < destH; y++) {
           sX = srcXOffset;
-          sY = (srcYOffset >> PRECISIONB) * img.width;
+          sY = (srcYOffset >> PRECISIONB) * img.pixelWidth;
           for (int x = 0; x < destW; x++) {
             destPixels[destOffset + x] =
               blend_overlay(destPixels[destOffset + x],
@@ -2388,7 +2350,7 @@ public class PImage implements PConstants, Cloneable {
       case HARD_LIGHT:
         for (int y = 0; y < destH; y++) {
           sX = srcXOffset;
-          sY = (srcYOffset >> PRECISIONB) * img.width;
+          sY = (srcYOffset >> PRECISIONB) * img.pixelWidth;
           for (int x = 0; x < destW; x++) {
             destPixels[destOffset + x] =
               blend_hard_light(destPixels[destOffset + x],
@@ -2403,7 +2365,7 @@ public class PImage implements PConstants, Cloneable {
       case SOFT_LIGHT:
         for (int y = 0; y < destH; y++) {
           sX = srcXOffset;
-          sY = (srcYOffset >> PRECISIONB) * img.width;
+          sY = (srcYOffset >> PRECISIONB) * img.pixelWidth;
           for (int x = 0; x < destW; x++) {
             destPixels[destOffset + x] =
               blend_soft_light(destPixels[destOffset + x],
@@ -2419,7 +2381,7 @@ public class PImage implements PConstants, Cloneable {
       case DODGE:
         for (int y = 0; y < destH; y++) {
           sX = srcXOffset;
-          sY = (srcYOffset >> PRECISIONB) * img.width;
+          sY = (srcYOffset >> PRECISIONB) * img.pixelWidth;
           for (int x = 0; x < destW; x++) {
             destPixels[destOffset + x] =
               blend_dodge(destPixels[destOffset + x],
@@ -2434,7 +2396,7 @@ public class PImage implements PConstants, Cloneable {
       case BURN:
         for (int y = 0; y < destH; y++) {
           sX = srcXOffset;
-          sY = (srcYOffset >> PRECISIONB) * img.width;
+          sY = (srcYOffset >> PRECISIONB) * img.pixelWidth;
           for (int x = 0; x < destW; x++) {
             destPixels[destOffset + x] =
               blend_burn(destPixels[destOffset + x],
@@ -2454,21 +2416,21 @@ public class PImage implements PConstants, Cloneable {
   private void filter_new_scanline() {
     sX = srcXOffset;
     fracV = srcYOffset & PREC_MAXVAL;
-    ifV = PREC_MAXVAL - fracV;
+    ifV = PREC_MAXVAL - fracV + 1;
     v1 = (srcYOffset >> PRECISIONB) * iw;
-    v2 = low((srcYOffset >> PRECISIONB) + 1, ih1) * iw;
+    v2 = min((srcYOffset >> PRECISIONB) + 1, ih1) * iw;
   }
 
 
   private int filter_bilinear() {
     fracU = sX & PREC_MAXVAL;
-    ifU = PREC_MAXVAL - fracU;
+    ifU = PREC_MAXVAL - fracU + 1;
     ul = (ifU * ifV) >> PRECISIONB;
-    ll = (ifU * fracV) >> PRECISIONB;
-    ur = (fracU * ifV) >> PRECISIONB;
-    lr = (fracU * fracV) >> PRECISIONB;
+    ll = ifU - ul;
+    ur = ifV - ul;
+    lr = PREC_MAXVAL + 1 - ul - ll - ur;
     u1 = (sX >> PRECISIONB);
-    u2 = low(u1 + 1, iw1);
+    u2 = min(u1 + 1, iw1);
 
     // get color values of the 4 neighbouring texels
     cUL = srcBuffer[v1 + u1];
@@ -2502,333 +2464,479 @@ public class PImage implements PConstants, Cloneable {
   // internal blending methods
 
 
-  private static int low(int a, int b) {
+  private static int min(int a, int b) {
     return (a < b) ? a : b;
   }
 
 
-  private static int high(int a, int b) {
+  private static int max(int a, int b) {
     return (a > b) ? a : b;
   }
-
-  // davbol - added peg helper, equiv to constrain(n,0,255)
-  private static int peg(int n) {
-    return (n < 0) ? 0 : ((n > 255) ? 255 : n);
-  }
-
-  private static int mix(int a, int b, int f) {
-    return a + (((b - a) * f) >> 8);
-  }
-
 
 
   /////////////////////////////////////////////////////////////
 
-  // BLEND MODE IMPLEMENTIONS
+  // BLEND MODE IMPLEMENTATIONS
 
+  /*
+   * Jakub Valtar
+   *
+   * All modes use SRC alpha to interpolate between DST and the result of
+   * the operation:
+   *
+   * R = (1 - SRC_ALPHA) * DST + SRC_ALPHA * <RESULT OF THE OPERATION>
+   *
+   * Comments above each mode only specify the formula of its operation.
+   *
+   * These implementations treat alpha 127 (=255/2) as a perfect 50 % mix.
+   *
+   * One alpha value between 126 and 127 is intentionally left out,
+   * so the step 126 -> 127 is twice as big compared to other steps.
+   * This is because our colors are in 0..255 range, but we divide
+   * by right shifting 8 places (=256) which is much faster than
+   * (correct) float division by 255.0f. The missing value was placed
+   * between 126 and 127, because limits of the range (near 0 and 255) and
+   * the middle value (127) have to blend correctly.
+   *
+   * Below you will often see RED and BLUE channels (RB) manipulated together
+   * and GREEN channel (GN) manipulated separately. It is sometimes possible
+   * because the operation won't use more than 16 bits, so we process the RED
+   * channel in the upper 16 bits and BLUE channel in the lower 16 bits. This
+   * decreases the number of operations per pixel and thus makes things faster.
+   *
+   * Some of the modes are hand tweaked (various +1s etc.) to be more accurate
+   * and to produce correct values in extremes. Below is a sketch you can use
+   * to check any blending function for
+   *
+   * 1) Discrepancies between color channels:
+   *    - highlighted by the offending color
+   * 2) Behavior at extremes (set colorCount to 256):
+   *    - values of all corners are printed to the console
+   * 3) Rounding errors:
+   *    - set colorCount to lower value to better see color bands
+   *
 
-  private static int blend_blend(int a, int b) {
-    int f = (b & ALPHA_MASK) >>> 24;
+// use powers of 2 in range 2..256
+// to better see color bands
+final int colorCount = 256;
 
-    return (low(((a & ALPHA_MASK) >>> 24) + f, 0xff) << 24 |
-            mix(a & RED_MASK, b & RED_MASK, f) & RED_MASK |
-            mix(a & GREEN_MASK, b & GREEN_MASK, f) & GREEN_MASK |
-            mix(a & BLUE_MASK, b & BLUE_MASK, f));
+final int blockSize = 3;
+
+void settings() {
+  size(blockSize * 256, blockSize * 256);
+}
+
+void setup() { }
+
+void draw() {
+  noStroke();
+  colorMode(RGB, colorCount-1);
+  int alpha = (mouseX / blockSize) << 24;
+  int r, g, b, r2, g2, b2 = 0;
+  for (int x = 0; x <= 0xFF; x++) {
+    for (int y = 0; y <= 0xFF; y++) {
+      int dst = (x << 16) | (x << 8) | x;
+      int src = (y << 16) | (y << 8) | y | alpha;
+      int result = testFunction(dst, src);
+      r = r2 = (result >> 16 & 0xFF);
+      g = g2 = (result >>  8 & 0xFF);
+      b = b2 = (result >>  0 & 0xFF);
+      if (r != g && r != b) r2 = (128 + r2) % 255;
+      if (g != r && g != b) g2 = (128 + g2) % 255;
+      if (b != r && b != g) b2 = (128 + b2) % 255;
+      fill(r2 % colorCount, g2 % colorCount, b2 % colorCount);
+      rect(x * blockSize, y * blockSize, blockSize, blockSize);
+    }
+  }
+  println(
+    "alpha:", mouseX/blockSize,
+    "TL:", hex(get(0, 0)),
+    "TR:", hex(get(width-1, 0)),
+    "BR:", hex(get(width-1, height-1)),
+    "BL:", hex(get(0, height-1)));
+}
+
+int testFunction(int dst, int src) {
+  // your function here
+  return dst;
+}
+
+   *
+   *
+   */
+
+  private static final int RB_MASK = 0x00FF00FF;
+  private static final int GN_MASK = 0x0000FF00;
+
+  /**
+   * Blend
+   * O = S
+   */
+  private static int blend_blend(int dst, int src) {
+    int a = src >>> 24;
+
+    int s_a = a + (a >= 0x7F ? 1 : 0);
+    int d_a = 0x100 - s_a;
+
+    return min((dst >>> 24) + a, 0xFF) << 24 |
+        ((dst & RB_MASK) * d_a + (src & RB_MASK) * s_a) >>> 8 & RB_MASK |
+        ((dst & GN_MASK) * d_a + (src & GN_MASK) * s_a) >>> 8 & GN_MASK;
   }
 
 
   /**
-   * additive blend with clipping
+   * Add
+   * O = MIN(D + S, 1)
    */
-  private static int blend_add_pin(int a, int b) {
-    int f = (b & ALPHA_MASK) >>> 24;
+  private static int blend_add_pin(int dst, int src) {
+    int a = src >>> 24;
 
-    return (low(((a & ALPHA_MASK) >>> 24) + f, 0xff) << 24 |
-            low(((a & RED_MASK) +
-                 ((b & RED_MASK) >> 8) * f), RED_MASK) & RED_MASK |
-            low(((a & GREEN_MASK) +
-                 ((b & GREEN_MASK) >> 8) * f), GREEN_MASK) & GREEN_MASK |
-            low((a & BLUE_MASK) +
-                (((b & BLUE_MASK) * f) >> 8), BLUE_MASK));
+    int s_a = a + (a >= 0x7F ? 1 : 0);
+
+    int rb = (dst & RB_MASK) + ((src & RB_MASK) * s_a >>> 8 & RB_MASK);
+    int gn = (dst & GN_MASK) + ((src & GN_MASK) * s_a >>> 8);
+
+    return min((dst >>> 24) + a, 0xFF) << 24 |
+        min(rb & 0xFFFF0000, RED_MASK)   |
+        min(gn & 0x00FFFF00, GREEN_MASK) |
+        min(rb & 0x0000FFFF, BLUE_MASK);
   }
 
 
   /**
-   * subtractive blend with clipping
+   * Subtract
+   * O = MAX(0, D - S)
    */
-  private static int blend_sub_pin(int a, int b) {
-    int f = (b & ALPHA_MASK) >>> 24;
+  private static int blend_sub_pin(int dst, int src) {
+    int a = src >>> 24;
 
-    return (low(((a & ALPHA_MASK) >>> 24) + f, 0xff) << 24 |
-            high(((a & RED_MASK) - ((b & RED_MASK) >> 8) * f),
-                 GREEN_MASK) & RED_MASK |
-            high(((a & GREEN_MASK) - ((b & GREEN_MASK) >> 8) * f),
-                 BLUE_MASK) & GREEN_MASK |
-            high((a & BLUE_MASK) - (((b & BLUE_MASK) * f) >> 8), 0));
+    int s_a = a + (a >= 0x7F ? 1 : 0);
+
+    int rb = ((src & RB_MASK)    * s_a >>> 8);
+    int gn = ((src & GREEN_MASK) * s_a >>> 8);
+
+    return min((dst >>> 24) + a, 0xFF) << 24 |
+        max((dst & RED_MASK)   - (rb & RED_MASK), 0) |
+        max((dst & GREEN_MASK) - (gn & GREEN_MASK), 0) |
+        max((dst & BLUE_MASK)  - (rb & BLUE_MASK), 0);
   }
 
 
   /**
-   * only returns the blended lightest colour
+   * Lightest
+   * O = MAX(D, S)
    */
-  private static int blend_lightest(int a, int b) {
-    int f = (b & ALPHA_MASK) >>> 24;
+  private static int blend_lightest(int dst, int src) {
+    int a = src >>> 24;
 
-    return (low(((a & ALPHA_MASK) >>> 24) + f, 0xff) << 24 |
-            high(a & RED_MASK, ((b & RED_MASK) >> 8) * f) & RED_MASK |
-            high(a & GREEN_MASK, ((b & GREEN_MASK) >> 8) * f) & GREEN_MASK |
-            high(a & BLUE_MASK, ((b & BLUE_MASK) * f) >> 8));
+    int s_a = a + (a >= 0x7F ? 1 : 0);
+    int d_a = 0x100 - s_a;
+
+    int rb = max(src & RED_MASK,   dst & RED_MASK) |
+             max(src & BLUE_MASK,  dst & BLUE_MASK);
+    int gn = max(src & GREEN_MASK, dst & GREEN_MASK);
+
+    return min((dst >>> 24) + a, 0xFF) << 24 |
+        ((dst & RB_MASK) * d_a + rb * s_a) >>> 8 & RB_MASK |
+        ((dst & GN_MASK) * d_a + gn * s_a) >>> 8 & GN_MASK;
   }
 
 
   /**
-   * only returns the blended darkest colour
+   * Darkest
+   * O = MIN(D, S)
    */
-  private static int blend_darkest(int a, int b) {
-    int f = (b & ALPHA_MASK) >>> 24;
+  private static int blend_darkest(int dst, int src) {
+    int a = src >>> 24;
 
-    return (low(((a & ALPHA_MASK) >>> 24) + f, 0xff) << 24 |
-            mix(a & RED_MASK,
-                low(a & RED_MASK,
-                    ((b & RED_MASK) >> 8) * f), f) & RED_MASK |
-            mix(a & GREEN_MASK,
-                low(a & GREEN_MASK,
-                    ((b & GREEN_MASK) >> 8) * f), f) & GREEN_MASK |
-            mix(a & BLUE_MASK,
-                low(a & BLUE_MASK,
-                    ((b & BLUE_MASK) * f) >> 8), f));
+    int s_a = a + (a >= 0x7F ? 1 : 0);
+    int d_a = 0x100 - s_a;
+
+    int rb = min(src & RED_MASK,   dst & RED_MASK) |
+             min(src & BLUE_MASK,  dst & BLUE_MASK);
+    int gn = min(src & GREEN_MASK, dst & GREEN_MASK);
+
+    return min((dst >>> 24) + a, 0xFF) << 24 |
+        ((dst & RB_MASK) * d_a + rb * s_a) >>> 8 & RB_MASK |
+        ((dst & GN_MASK) * d_a + gn * s_a) >>> 8 & GN_MASK;
   }
 
 
   /**
-   * returns the absolute value of the difference of the input colors
-   * C = |A - B|
+   * Difference
+   * O = ABS(D - S)
    */
-  private static int blend_difference(int a, int b) {
-    // setup (this portion will always be the same)
-    int f = (b & ALPHA_MASK) >>> 24;
-    int ar = (a & RED_MASK) >> 16;
-    int ag = (a & GREEN_MASK) >> 8;
-    int ab = (a & BLUE_MASK);
-    int br = (b & RED_MASK) >> 16;
-    int bg = (b & GREEN_MASK) >> 8;
-    int bb = (b & BLUE_MASK);
-    // formula:
-    int cr = (ar > br) ? (ar-br) : (br-ar);
-    int cg = (ag > bg) ? (ag-bg) : (bg-ag);
-    int cb = (ab > bb) ? (ab-bb) : (bb-ab);
-    // alpha blend (this portion will always be the same)
-    return (low(((a & ALPHA_MASK) >>> 24) + f, 0xff) << 24 |
-            (peg(ar + (((cr - ar) * f) >> 8)) << 16) |
-            (peg(ag + (((cg - ag) * f) >> 8)) << 8) |
-            (peg(ab + (((cb - ab) * f) >> 8)) ) );
+  private static int blend_difference(int dst, int src) {
+    int a = src >>> 24;
+
+    int s_a = a + (a >= 0x7F ? 1 : 0);
+    int d_a = 0x100 - s_a;
+
+    int r = (dst & RED_MASK)   - (src & RED_MASK);
+    int b = (dst & BLUE_MASK)  - (src & BLUE_MASK);
+    int g = (dst & GREEN_MASK) - (src & GREEN_MASK);
+
+    int rb = (r < 0 ? -r : r) |
+             (b < 0 ? -b : b);
+    int gn = (g < 0 ? -g : g);
+
+    return min((dst >>> 24) + a, 0xFF) << 24 |
+        ((dst & RB_MASK) * d_a + rb * s_a) >>> 8 & RB_MASK |
+        ((dst & GN_MASK) * d_a + gn * s_a) >>> 8 & GN_MASK;
   }
 
 
   /**
-   * Cousin of difference, algorithm used here is based on a Lingo version
-   * found here: http://www.mediamacros.com/item/item-1006687616/
-   * (Not yet verified to be correct).
+   * Exclusion
+   * O = (1 - S)D + S(1 - D)
+   * O = D + S - 2DS
    */
-  private static int blend_exclusion(int a, int b) {
-    // setup (this portion will always be the same)
-    int f = (b & ALPHA_MASK) >>> 24;
-    int ar = (a & RED_MASK) >> 16;
-    int ag = (a & GREEN_MASK) >> 8;
-    int ab = (a & BLUE_MASK);
-    int br = (b & RED_MASK) >> 16;
-    int bg = (b & GREEN_MASK) >> 8;
-    int bb = (b & BLUE_MASK);
-    // formula:
-    int cr = ar + br - ((ar * br) >> 7);
-    int cg = ag + bg - ((ag * bg) >> 7);
-    int cb = ab + bb - ((ab * bb) >> 7);
-    // alpha blend (this portion will always be the same)
-    return (low(((a & ALPHA_MASK) >>> 24) + f, 0xff) << 24 |
-            (peg(ar + (((cr - ar) * f) >> 8)) << 16) |
-            (peg(ag + (((cg - ag) * f) >> 8)) << 8) |
-            (peg(ab + (((cb - ab) * f) >> 8)) ) );
+  private static int blend_exclusion(int dst, int src) {
+    int a = src >>> 24;
+
+    int s_a = a + (a >= 0x7F ? 1 : 0);
+    int d_a = 0x100 - s_a;
+
+    int d_rb = dst & RB_MASK;
+    int d_gn = dst & GN_MASK;
+
+    int s_gn = src & GN_MASK;
+
+    int f_r = (dst & RED_MASK) >> 16;
+    int f_b = (dst & BLUE_MASK);
+
+    int rb_sub =
+        ((src & RED_MASK) * (f_r + (f_r >= 0x7F ? 1 : 0)) |
+        (src & BLUE_MASK) * (f_b + (f_b >= 0x7F ? 1 : 0)))
+        >>> 7 & 0x01FF01FF;
+    int gn_sub = s_gn * (d_gn + (d_gn >= 0x7F00 ? 0x100 : 0))
+        >>> 15 & 0x0001FF00;
+
+    return min((dst >>> 24) + a, 0xFF) << 24 |
+        (d_rb * d_a + (d_rb + (src & RB_MASK) - rb_sub) * s_a) >>> 8 & RB_MASK |
+        (d_gn * d_a + (d_gn + s_gn            - gn_sub) * s_a) >>> 8 & GN_MASK;
+  }
+
+
+  /*
+   * Multiply
+   * O = DS
+   */
+  private static int blend_multiply(int dst, int src) {
+    int a = src >>> 24;
+
+    int s_a = a + (a >= 0x7F ? 1 : 0);
+    int d_a = 0x100 - s_a;
+
+    int d_gn = dst & GN_MASK;
+
+    int f_r = (dst & RED_MASK) >> 16;
+    int f_b = (dst & BLUE_MASK);
+
+    int rb =
+        ((src & RED_MASK)  * (f_r + 1) |
+        (src & BLUE_MASK)  * (f_b + 1))
+        >>>  8 & RB_MASK;
+    int gn =
+        (src & GREEN_MASK) * (d_gn + 0x100)
+        >>> 16 & GN_MASK;
+
+    return min((dst >>> 24) + a, 0xFF) << 24 |
+        ((dst & RB_MASK) * d_a + rb * s_a) >>> 8 & RB_MASK |
+        (d_gn            * d_a + gn * s_a) >>> 8 & GN_MASK;
   }
 
 
   /**
-   * returns the product of the input colors
-   * C = A * B
+   * Screen
+   * O = 1 - (1 - D)(1 - S)
+   * O = D + S - DS
    */
-  private static int blend_multiply(int a, int b) {
-    // setup (this portion will always be the same)
-    int f = (b & ALPHA_MASK) >>> 24;
-    int ar = (a & RED_MASK) >> 16;
-    int ag = (a & GREEN_MASK) >> 8;
-    int ab = (a & BLUE_MASK);
-    int br = (b & RED_MASK) >> 16;
-    int bg = (b & GREEN_MASK) >> 8;
-    int bb = (b & BLUE_MASK);
-    // formula:
-    int cr = (ar * br) >> 8;
-    int cg = (ag * bg) >> 8;
-    int cb = (ab * bb) >> 8;
-    // alpha blend (this portion will always be the same)
-    return (low(((a & ALPHA_MASK) >>> 24) + f, 0xff) << 24 |
-            (peg(ar + (((cr - ar) * f) >> 8)) << 16) |
-            (peg(ag + (((cg - ag) * f) >> 8)) << 8) |
-            (peg(ab + (((cb - ab) * f) >> 8)) ) );
+  private static int blend_screen(int dst, int src) {
+    int a = src >>> 24;
+
+    int s_a = a + (a >= 0x7F ? 1 : 0);
+    int d_a = 0x100 - s_a;
+
+    int d_rb = dst & RB_MASK;
+    int d_gn = dst & GN_MASK;
+
+    int s_gn = src & GN_MASK;
+
+    int f_r = (dst & RED_MASK) >> 16;
+    int f_b = (dst & BLUE_MASK);
+
+    int rb_sub =
+        ((src & RED_MASK) * (f_r + 1) |
+        (src & BLUE_MASK) * (f_b + 1))
+        >>>  8 & RB_MASK;
+    int gn_sub = s_gn * (d_gn + 0x100)
+        >>> 16 & GN_MASK;
+
+    return min((dst >>> 24) + a, 0xFF) << 24 |
+        (d_rb * d_a + (d_rb + (src & RB_MASK) - rb_sub) * s_a) >>> 8 & RB_MASK |
+        (d_gn * d_a + (d_gn + s_gn            - gn_sub) * s_a) >>> 8 & GN_MASK;
   }
 
 
   /**
-   * returns the inverse of the product of the inverses of the input colors
-   * (the inverse of multiply).  C = 1 - (1-A) * (1-B)
+   * Overlay
+   * O = 2 * MULTIPLY(D, S) = 2DS                   for D < 0.5
+   * O = 2 * SCREEN(D, S) - 1 = 2(S + D - DS) - 1   otherwise
    */
-  private static int blend_screen(int a, int b) {
-    // setup (this portion will always be the same)
-    int f = (b & ALPHA_MASK) >>> 24;
-    int ar = (a & RED_MASK) >> 16;
-    int ag = (a & GREEN_MASK) >> 8;
-    int ab = (a & BLUE_MASK);
-    int br = (b & RED_MASK) >> 16;
-    int bg = (b & GREEN_MASK) >> 8;
-    int bb = (b & BLUE_MASK);
-    // formula:
-    int cr = 255 - (((255 - ar) * (255 - br)) >> 8);
-    int cg = 255 - (((255 - ag) * (255 - bg)) >> 8);
-    int cb = 255 - (((255 - ab) * (255 - bb)) >> 8);
-    // alpha blend (this portion will always be the same)
-    return (low(((a & ALPHA_MASK) >>> 24) + f, 0xff) << 24 |
-            (peg(ar + (((cr - ar) * f) >> 8)) << 16) |
-            (peg(ag + (((cg - ag) * f) >> 8)) << 8) |
-            (peg(ab + (((cb - ab) * f) >> 8)) ) );
+  private static int blend_overlay(int dst, int src) {
+    int a = src >>> 24;
+
+    int s_a = a + (a >= 0x7F ? 1 : 0);
+    int d_a = 0x100 - s_a;
+
+    int d_r = dst & RED_MASK;
+    int d_g = dst & GREEN_MASK;
+    int d_b = dst & BLUE_MASK;
+
+    int s_r = src & RED_MASK;
+    int s_g = src & GREEN_MASK;
+    int s_b = src & BLUE_MASK;
+
+    int r = (d_r < 0x800000) ?
+        d_r * ((s_r >>> 16) + 1) >>> 7 :
+        0xFF0000 - ((0x100 - (s_r >>> 16)) * (RED_MASK - d_r) >>> 7);
+    int g = (d_g < 0x8000) ?
+        d_g * (s_g + 0x100) >>> 15 :
+        (0xFF00 - ((0x10000 - s_g) * (GREEN_MASK - d_g) >>> 15));
+    int b = (d_b < 0x80) ?
+        d_b * (s_b + 1) >>> 7 :
+        (0xFF00 - ((0x100 - s_b) * (BLUE_MASK - d_b) << 1)) >>> 8;
+
+    return min((dst >>> 24) + a, 0xFF) << 24 |
+        ((dst & RB_MASK) * d_a + ((r | b) & RB_MASK) * s_a) >>> 8 & RB_MASK |
+        ((dst & GN_MASK) * d_a + (g       & GN_MASK) * s_a) >>> 8 & GN_MASK;
   }
 
 
   /**
-   * returns either multiply or screen for darker or lighter values of A
-   * (the inverse of hard light)
-   * C =
-   *   A < 0.5 : 2 * A * B
-   *   A >=0.5 : 1 - (2 * (255-A) * (255-B))
+   * Hard Light
+   * O = OVERLAY(S, D)
+   *
+   * O = 2 * MULTIPLY(D, S) = 2DS                   for S < 0.5
+   * O = 2 * SCREEN(D, S) - 1 = 2(S + D - DS) - 1   otherwise
    */
-  private static int blend_overlay(int a, int b) {
-    // setup (this portion will always be the same)
-    int f = (b & ALPHA_MASK) >>> 24;
-    int ar = (a & RED_MASK) >> 16;
-    int ag = (a & GREEN_MASK) >> 8;
-    int ab = (a & BLUE_MASK);
-    int br = (b & RED_MASK) >> 16;
-    int bg = (b & GREEN_MASK) >> 8;
-    int bb = (b & BLUE_MASK);
-    // formula:
-    int cr = (ar < 128) ? ((ar*br)>>7) : (255-(((255-ar)*(255-br))>>7));
-    int cg = (ag < 128) ? ((ag*bg)>>7) : (255-(((255-ag)*(255-bg))>>7));
-    int cb = (ab < 128) ? ((ab*bb)>>7) : (255-(((255-ab)*(255-bb))>>7));
-    // alpha blend (this portion will always be the same)
-    return (low(((a & ALPHA_MASK) >>> 24) + f, 0xff) << 24 |
-            (peg(ar + (((cr - ar) * f) >> 8)) << 16) |
-            (peg(ag + (((cg - ag) * f) >> 8)) << 8) |
-            (peg(ab + (((cb - ab) * f) >> 8)) ) );
+  private static int blend_hard_light(int dst, int src) {
+    int a = src >>> 24;
+
+    int s_a = a + (a >= 0x7F ? 1 : 0);
+    int d_a = 0x100 - s_a;
+
+    int d_r = dst & RED_MASK;
+    int d_g = dst & GREEN_MASK;
+    int d_b = dst & BLUE_MASK;
+
+    int s_r = src & RED_MASK;
+    int s_g = src & GREEN_MASK;
+    int s_b = src & BLUE_MASK;
+
+    int r = (s_r < 0x800000) ?
+        s_r * ((d_r >>> 16) + 1) >>> 7 :
+        0xFF0000 - ((0x100 - (d_r >>> 16)) * (RED_MASK - s_r) >>> 7);
+    int g = (s_g < 0x8000) ?
+        s_g * (d_g + 0x100) >>> 15 :
+        (0xFF00 - ((0x10000 - d_g) * (GREEN_MASK - s_g) >>> 15));
+    int b = (s_b < 0x80) ?
+        s_b * (d_b + 1) >>> 7 :
+        (0xFF00 - ((0x100 - d_b) * (BLUE_MASK - s_b) << 1)) >>> 8;
+
+    return min((dst >>> 24) + a, 0xFF) << 24 |
+        ((dst & RB_MASK) * d_a + ((r | b) & RB_MASK) * s_a) >>> 8 & RB_MASK |
+        ((dst & GN_MASK) * d_a + (g       & GN_MASK) * s_a) >>> 8 & GN_MASK;
   }
 
 
   /**
-   * returns either multiply or screen for darker or lighter values of B
-   * (the inverse of overlay)
-   * C =
-   *   B < 0.5 : 2 * A * B
-   *   B >=0.5 : 1 - (2 * (255-A) * (255-B))
+   * Soft Light (Pegtop)
+   * O = (1 - D) * MULTIPLY(D, S) + D * SCREEN(D, S)
+   * O = (1 - D) * DS + D * (1 - (1 - D)(1 - S))
+   * O = 2DS + DD - 2DDS
    */
-   private static int blend_hard_light(int a, int b) {
-    // setup (this portion will always be the same)
-    int f = (b & ALPHA_MASK) >>> 24;
-    int ar = (a & RED_MASK) >> 16;
-    int ag = (a & GREEN_MASK) >> 8;
-    int ab = (a & BLUE_MASK);
-    int br = (b & RED_MASK) >> 16;
-    int bg = (b & GREEN_MASK) >> 8;
-    int bb = (b & BLUE_MASK);
-    // formula:
-    int cr = (br < 128) ? ((ar*br)>>7) : (255-(((255-ar)*(255-br))>>7));
-    int cg = (bg < 128) ? ((ag*bg)>>7) : (255-(((255-ag)*(255-bg))>>7));
-    int cb = (bb < 128) ? ((ab*bb)>>7) : (255-(((255-ab)*(255-bb))>>7));
-    // alpha blend (this portion will always be the same)
-    return (low(((a & ALPHA_MASK) >>> 24) + f, 0xff) << 24 |
-            (peg(ar + (((cr - ar) * f) >> 8)) << 16) |
-            (peg(ag + (((cg - ag) * f) >> 8)) << 8) |
-            (peg(ab + (((cb - ab) * f) >> 8)) ) );
+  private static int blend_soft_light(int dst, int src) {
+    int a = src >>> 24;
+
+    int s_a = a + (a >= 0x7F ? 1 : 0);
+    int d_a = 0x100 - s_a;
+
+    int d_r = dst & RED_MASK;
+    int d_g = dst & GREEN_MASK;
+    int d_b = dst & BLUE_MASK;
+
+    int s_r1 = src & RED_MASK >> 16;
+    int s_g1 = src & GREEN_MASK >> 8;
+    int s_b1 = src & BLUE_MASK;
+
+    int d_r1 = (d_r >> 16) + (s_r1 < 7F ? 1 : 0);
+    int d_g1 = (d_g >> 8)  + (s_g1 < 7F ? 1 : 0);
+    int d_b1 = d_b         + (s_b1 < 7F ? 1 : 0);
+
+    int r = (s_r1 * d_r >> 7) + 0xFF * d_r1 * (d_r1 + 1) -
+        ((s_r1 * d_r1 * d_r1) << 1) & RED_MASK;
+    int g = (s_g1 * d_g << 1) + 0xFF * d_g1 * (d_g1 + 1) -
+        ((s_g1 * d_g1 * d_g1) << 1) >>> 8 & GREEN_MASK;
+    int b = (s_b1 * d_b << 9) + 0xFF * d_b1 * (d_b1 + 1) -
+        ((s_b1 * d_b1 * d_b1) << 1) >>> 16;
+
+    return min((dst >>> 24) + a, 0xFF) << 24 |
+        ((dst & RB_MASK) * d_a + (r | b) * s_a) >>> 8 & RB_MASK |
+        ((dst & GN_MASK) * d_a + g       * s_a) >>> 8 & GN_MASK;
   }
 
 
   /**
-   * returns the inverse multiply plus screen, which simplifies to
-   * C = 2AB + A^2 - 2A^2B
+   * Dodge
+   * O = D / (1 - S)
    */
-  private static int blend_soft_light(int a, int b) {
-    // setup (this portion will always be the same)
-    int f = (b & ALPHA_MASK) >>> 24;
-    int ar = (a & RED_MASK) >> 16;
-    int ag = (a & GREEN_MASK) >> 8;
-    int ab = (a & BLUE_MASK);
-    int br = (b & RED_MASK) >> 16;
-    int bg = (b & GREEN_MASK) >> 8;
-    int bb = (b & BLUE_MASK);
-    // formula:
-    int cr = ((ar*br)>>7) + ((ar*ar)>>8) - ((ar*ar*br)>>15);
-    int cg = ((ag*bg)>>7) + ((ag*ag)>>8) - ((ag*ag*bg)>>15);
-    int cb = ((ab*bb)>>7) + ((ab*ab)>>8) - ((ab*ab*bb)>>15);
-    // alpha blend (this portion will always be the same)
-    return (low(((a & ALPHA_MASK) >>> 24) + f, 0xff) << 24 |
-            (peg(ar + (((cr - ar) * f) >> 8)) << 16) |
-            (peg(ag + (((cg - ag) * f) >> 8)) << 8) |
-            (peg(ab + (((cb - ab) * f) >> 8)) ) );
+  private static int blend_dodge(int dst, int src) {
+    int a = src >>> 24;
+
+    int s_a = a + (a >= 0x7F ? 1 : 0);
+    int d_a = 0x100 - s_a;
+
+    int r = (dst & RED_MASK)          / (256 - ((src & RED_MASK) >> 16));
+    int g = ((dst & GREEN_MASK) << 8) / (256 - ((src & GREEN_MASK) >> 8));
+    int b = ((dst & BLUE_MASK)  << 8) / (256 - (src & BLUE_MASK));
+
+    int rb =
+        (r > 0xFF00 ? 0xFF0000 : ((r << 8) & RED_MASK)) |
+        (b > 0x00FF ? 0x0000FF : b);
+    int gn =
+        (g > 0xFF00 ? 0x00FF00 : (g & GREEN_MASK));
+
+    return min((dst >>> 24) + a, 0xFF) << 24 |
+        ((dst & RB_MASK) * d_a + rb * s_a) >>> 8 & RB_MASK |
+        ((dst & GN_MASK) * d_a + gn * s_a) >>> 8 & GN_MASK;
   }
 
 
   /**
-   * Returns the first (underlay) color divided by the inverse of
-   * the second (overlay) color. C = A / (255-B)
+   * Burn
+   * O = 1 - (1 - A) / B
    */
-  private static int blend_dodge(int a, int b) {
-    // setup (this portion will always be the same)
-    int f = (b & ALPHA_MASK) >>> 24;
-    int ar = (a & RED_MASK) >> 16;
-    int ag = (a & GREEN_MASK) >> 8;
-    int ab = (a & BLUE_MASK);
-    int br = (b & RED_MASK) >> 16;
-    int bg = (b & GREEN_MASK) >> 8;
-    int bb = (b & BLUE_MASK);
-    // formula:
-    int cr = (br==255) ? 255 : peg((ar << 8) / (255 - br)); // division requires pre-peg()-ing
-    int cg = (bg==255) ? 255 : peg((ag << 8) / (255 - bg)); // "
-    int cb = (bb==255) ? 255 : peg((ab << 8) / (255 - bb)); // "
-    // alpha blend (this portion will always be the same)
-    return (low(((a & ALPHA_MASK) >>> 24) + f, 0xff) << 24 |
-            (peg(ar + (((cr - ar) * f) >> 8)) << 16) |
-            (peg(ag + (((cg - ag) * f) >> 8)) << 8) |
-            (peg(ab + (((cb - ab) * f) >> 8)) ) );
-  }
+  private static int blend_burn(int dst, int src) {
+    int a = src >>> 24;
 
+    int s_a = a + (a >= 0x7F ? 1 : 0);
+    int d_a = 0x100 - s_a;
 
-  /**
-   * returns the inverse of the inverse of the first (underlay) color
-   * divided by the second (overlay) color. C = 255 - (255-A) / B
-   */
-  private static int blend_burn(int a, int b) {
-    // setup (this portion will always be the same)
-    int f = (b & ALPHA_MASK) >>> 24;
-    int ar = (a & RED_MASK) >> 16;
-    int ag = (a & GREEN_MASK) >> 8;
-    int ab = (a & BLUE_MASK);
-    int br = (b & RED_MASK) >> 16;
-    int bg = (b & GREEN_MASK) >> 8;
-    int bb = (b & BLUE_MASK);
-    // formula:
-    int cr = (br==0) ? 0 : 255 - peg(((255 - ar) << 8) / br); // division requires pre-peg()-ing
-    int cg = (bg==0) ? 0 : 255 - peg(((255 - ag) << 8) / bg); // "
-    int cb = (bb==0) ? 0 : 255 - peg(((255 - ab) << 8) / bb); // "
-    // alpha blend (this portion will always be the same)
-    return (low(((a & ALPHA_MASK) >>> 24) + f, 0xff) << 24 |
-            (peg(ar + (((cr - ar) * f) >> 8)) << 16) |
-            (peg(ag + (((cg - ag) * f) >> 8)) << 8) |
-            (peg(ab + (((cb - ab) * f) >> 8)) ) );
+    int r = ((0xFF0000 - (dst & RED_MASK)))        / (1 + (src & RED_MASK >> 16));
+    int g = ((0x00FF00 - (dst & GREEN_MASK)) << 8) / (1 + (src & GREEN_MASK >> 8));
+    int b = ((0x0000FF - (dst & BLUE_MASK))  << 8) / (1 + (src & BLUE_MASK));
+
+    int rb = RB_MASK -
+        (r > 0xFF00 ? 0xFF0000 : ((r << 8) & RED_MASK)) -
+        (b > 0x00FF ? 0x0000FF : b);
+    int gn = GN_MASK -
+        (g > 0xFF00 ? 0x00FF00 : (g & GREEN_MASK));
+
+    return min((dst >>> 24) + a, 0xFF) << 24 |
+        ((dst & RB_MASK) * d_a + rb * s_a) >>> 8 & RB_MASK |
+        ((dst & GN_MASK) * d_a + gn * s_a) >>> 8 & GN_MASK;
   }
 
 
@@ -2910,12 +3018,12 @@ public class PImage implements PConstants, Cloneable {
       byte tiff[] = new byte[768];
       System.arraycopy(TIFF_HEADER, 0, tiff, 0, TIFF_HEADER.length);
 
-      tiff[30] = (byte) ((width >> 8) & 0xff);
-      tiff[31] = (byte) ((width) & 0xff);
-      tiff[42] = tiff[102] = (byte) ((height >> 8) & 0xff);
-      tiff[43] = tiff[103] = (byte) ((height) & 0xff);
+      tiff[30] = (byte) ((pixelWidth >> 8) & 0xff);
+      tiff[31] = (byte) ((pixelWidth) & 0xff);
+      tiff[42] = tiff[102] = (byte) ((pixelHeight >> 8) & 0xff);
+      tiff[43] = tiff[103] = (byte) ((pixelHeight) & 0xff);
 
-      int count = width*height*3;
+      int count = pixelWidth*pixelHeight*3;
       tiff[114] = (byte) ((count >> 24) & 0xff);
       tiff[115] = (byte) ((count >> 16) & 0xff);
       tiff[116] = (byte) ((count >> 8) & 0xff);
@@ -2979,15 +3087,15 @@ public class PImage implements PConstants, Cloneable {
        throw new RuntimeException("Image format not recognized inside save()");
      }
      // set image dimensions lo-hi byte order
-     header[12] = (byte) (width & 0xff);
-     header[13] = (byte) (width >> 8);
-     header[14] = (byte) (height & 0xff);
-     header[15] = (byte) (height >> 8);
+     header[12] = (byte) (pixelWidth & 0xff);
+     header[13] = (byte) (pixelWidth >> 8);
+     header[14] = (byte) (pixelHeight & 0xff);
+     header[15] = (byte) (pixelHeight >> 8);
 
      try {
        output.write(header);
 
-       int maxLen = height * width;
+       int maxLen = pixelHeight * pixelWidth;
        int index = 0;
        int col; //, prevCol;
        int[] currChunk = new int[128];
@@ -3114,8 +3222,8 @@ public class PImage implements PConstants, Cloneable {
         outputFormat = BufferedImage.TYPE_INT_RGB;
       }
 
-      BufferedImage bimage = new BufferedImage(width, height, outputFormat);
-      bimage.setRGB(0, 0, width, height, pixels, 0, width);
+      BufferedImage bimage = new BufferedImage(pixelWidth, pixelHeight, outputFormat);
+      bimage.setRGB(0, 0, pixelWidth, pixelHeight, pixels, 0, pixelWidth);
 
       File file = new File(path);
 
@@ -3327,4 +3435,3 @@ public class PImage implements PConstants, Cloneable {
     return success;
   }
 }
-

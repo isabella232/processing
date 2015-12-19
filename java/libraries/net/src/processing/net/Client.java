@@ -51,7 +51,6 @@ public class Client implements Runnable {
 
   Thread thread;
   Socket socket;
-  String ip;
   int port;
   String host;
 
@@ -62,6 +61,8 @@ public class Client implements Runnable {
   int bufferIndex;
   int bufferLast;
 
+  boolean disposeRegistered = false;
+  
   
   /**
    * @param parent typically use "this"
@@ -82,6 +83,7 @@ public class Client implements Runnable {
       thread.start();
 
       parent.registerMethod("dispose", this);
+      disposeRegistered = true;
 
       // reflection to check whether host sketch has a call for
       // public void clientEvent(processing.net.Client)
@@ -158,6 +160,10 @@ public class Client implements Runnable {
         e.printStackTrace();
         disconnectEventMethod = null;
       }
+    }
+    if (disposeRegistered) {
+      parent.unregisterMethod("dispose", this);
+      disposeRegistered = false;
     }
     dispose();
   }
@@ -255,8 +261,15 @@ public class Client implements Runnable {
 
 
   /**
-   * Return true if this client is still active and hasn't run
+   * ( begin auto-generated from Client_active.xml )
+   * 
+   * Returns true if this client is still active and hasn't run
    * into any trouble.
+   * 
+   * ( end auto-generated )
+   * @webref client:client
+   * @brief Returns true if this client is still active
+   * @usage application
    */
   public boolean active() {
     return (thread != null);
@@ -274,7 +287,10 @@ public class Client implements Runnable {
    * @brief Returns the IP address of the machine as a String
    */
   public String ip() {
-    return socket.getInetAddress().getHostAddress();
+    if (socket != null){
+      return socket.getInetAddress().getHostAddress();
+    }
+    return null;
   }
 
 

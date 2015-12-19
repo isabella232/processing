@@ -3,12 +3,13 @@
 /*
   Part of the Processing project - http://processing.org
 
-  Copyright (c) 2011-13 Ben Fry and Casey Reas
+  Copyright (c) 2012-15 The Processing Foundation
+  Copyright (c) 2004-12 Ben Fry and Casey Reas
+  Copyright (c) 2001-04 Massachusetts Institute of Technology
 
   This library is free software; you can redistribute it and/or
   modify it under the terms of the GNU Lesser General Public
-  License as published by the Free Software Foundation; either
-  version 2.1 of the License, or (at your option) any later version.
+  License as published by the Free Software Foundation, version 2.1.
 
   This library is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -24,6 +25,7 @@
 package processing.opengl;
 
 import processing.core.*;
+import processing.opengl.PGraphicsOpenGL.GLResourceShader;
 
 import java.net.URL;
 import java.nio.FloatBuffer;
@@ -88,6 +90,7 @@ public class PShader implements PConstants {
   public int glProgram;
   public int glVertex;
   public int glFragment;
+  private GLResourceShader glres;
 
   protected URL vertexURL;
   protected URL fragmentURL;
@@ -303,27 +306,9 @@ public class PShader implements PConstants {
   }
 
 
-  @Override
-  protected void finalize() throws Throwable {
-    try {
-      if (glVertex != 0) {
-        PGraphicsOpenGL.finalizeGLSLVertShaderObject(glVertex, context);
-      }
-      if (glFragment != 0) {
-        PGraphicsOpenGL.finalizeGLSLFragShaderObject(glFragment, context);
-      }
-      if (glProgram != 0) {
-        PGraphicsOpenGL.finalizeGLSLProgramObject(glProgram, context);
-      }
-    } finally {
-      super.finalize();
-    }
-  }
-
-
   public void setVertexShader(String vertFilename) {
     this.vertexFilename = vertFilename;
-    vertexShaderSource = pgl.loadFragmentShader(vertFilename);
+    vertexShaderSource = pgl.loadVertexShader(vertFilename);
   }
 
 
@@ -340,13 +325,13 @@ public class PShader implements PConstants {
 
   public void setFragmentShader(String fragFilename) {
     this.fragmentFilename = fragFilename;
-    fragmentShaderSource = pgl.loadVertexShader(fragFilename);
+    fragmentShaderSource = pgl.loadFragmentShader(fragFilename);
   }
 
 
   public void setFragmentShader(URL fragURL) {
     this.fragmentURL = fragURL;
-    fragmentShaderSource = pgl.loadVertexShader(fragURL);
+    fragmentShaderSource = pgl.loadFragmentShader(fragURL);
   }
 
   public void setFragmentShader(String[] fragSource) {
@@ -753,7 +738,8 @@ public class PShader implements PConstants {
       uniformValues.put(loc, new UniformValue(type, value));
     } else {
       PGraphics.showWarning("The shader doesn't have a uniform called \"" +
-                            name + "\"");
+                            name + "\" OR the uniform was removed during " +
+                            "compilation because it was unused.");
     }
   }
 
@@ -896,47 +882,63 @@ public class PShader implements PConstants {
     }
   }
 
-  protected void init() {
+
+  public void init() {
     if (glProgram == 0 || contextIsOutdated()) {
-      context = pgl.getCurrentContext();
-      glProgram = PGraphicsOpenGL.createGLSLProgramObject(context, pgl);
-
-      boolean vertRes = true;
-      if (hasVertexShader()) {
-        vertRes = compileVertexShader();
-      } else {
-        PGraphics.showException("Doesn't have a vertex shader");
-      }
-
-      boolean fragRes = true;
-      if (hasFragmentShader()) {
-        fragRes = compileFragmentShader();
-      } else {
-        PGraphics.showException("Doesn't have a fragment shader");
-      }
-
-      if (vertRes && fragRes) {
+      create();
+      if (compile()) {
         pgl.attachShader(glProgram, glVertex);
         pgl.attachShader(glProgram, glFragment);
+
         setup();
 
         pgl.linkProgram(glProgram);
 
-        pgl.getProgramiv(glProgram, PGL.LINK_STATUS, intBuffer);
-        boolean linked = intBuffer.get(0) == 0 ? false : true;
-        if (!linked) {
-          PGraphics.showException("Cannot link shader program:\n" +
-                                  pgl.getProgramInfoLog(glProgram));
-        }
-
-        pgl.validateProgram(glProgram);
-        pgl.getProgramiv(glProgram, PGL.VALIDATE_STATUS, intBuffer);
-        boolean validated = intBuffer.get(0) == 0 ? false : true;
-        if (!validated) {
-          PGraphics.showException("Cannot validate shader program:\n" +
-                                  pgl.getProgramInfoLog(glProgram));
-        }
+        validate();
       }
+    }
+  }
+
+
+  protected void create() {
+    context = pgl.getCurrentContext();
+    glres = new GLResourceShader(this);
+  }
+
+
+  protected boolean compile() {
+    boolean vertRes = true;
+    if (hasVertexShader()) {
+      vertRes = compileVertexShader();
+    } else {
+      PGraphics.showException("Doesn't have a vertex shader");
+    }
+
+    boolean fragRes = true;
+    if (hasFragmentShader()) {
+      fragRes = compileFragmentShader();
+    } else {
+      PGraphics.showException("Doesn't have a fragment shader");
+    }
+
+    return vertRes && fragRes;
+  }
+
+
+  protected void validate() {
+    pgl.getProgramiv(glProgram, PGL.LINK_STATUS, intBuffer);
+    boolean linked = intBuffer.get(0) == 0 ? false : true;
+    if (!linked) {
+      PGraphics.showException("Cannot link shader program:\n" +
+                              pgl.getProgramInfoLog(glProgram));
+    }
+
+    pgl.validateProgram(glProgram);
+    pgl.getProgramiv(glProgram, PGL.VALIDATE_STATUS, intBuffer);
+    boolean validated = intBuffer.get(0) == 0 ? false : true;
+    if (!validated) {
+      PGraphics.showException("Cannot validate shader program:\n" +
+                              pgl.getProgramInfoLog(glProgram));
     }
   }
 
@@ -944,13 +946,7 @@ public class PShader implements PConstants {
   protected boolean contextIsOutdated() {
     boolean outdated = !pgl.contextIsCurrent(context);
     if (outdated) {
-      PGraphicsOpenGL.removeGLSLProgramObject(glProgram, context);
-      PGraphicsOpenGL.removeGLSLVertShaderObject(glVertex, context);
-      PGraphicsOpenGL.removeGLSLFragShaderObject(glFragment, context);
-
-      glProgram = 0;
-      glVertex = 0;
-      glFragment = 0;
+      dispose();
     }
     return outdated;
   }
@@ -961,16 +957,16 @@ public class PShader implements PConstants {
     return vertexShaderSource != null && 0 < vertexShaderSource.length;
   }
 
+
   protected boolean hasFragmentShader() {
     return fragmentShaderSource != null && 0 < fragmentShaderSource.length;
   }
+
 
   /**
    * @param shaderSource a string containing the shader's code
    */
   protected boolean compileVertexShader() {
-    glVertex = PGraphicsOpenGL.createGLSLVertShaderObject(context, pgl);
-
     pgl.shaderSource(glVertex, PApplet.join(vertexShaderSource, "\n"));
     pgl.compileShader(glVertex);
 
@@ -990,8 +986,6 @@ public class PShader implements PConstants {
    * @param shaderSource a string containing the shader's code
    */
   protected boolean compileFragmentShader() {
-    glFragment = PGraphicsOpenGL.createGLSLFragShaderObject(context, pgl);
-
     pgl.shaderSource(glFragment, PApplet.join(fragmentShaderSource, "\n"));
     pgl.compileShader(glFragment);
 
@@ -1008,19 +1002,15 @@ public class PShader implements PConstants {
 
 
   protected void dispose() {
-    if (glVertex != 0) {
-      PGraphicsOpenGL.deleteGLSLVertShaderObject(glVertex, context, pgl);
+    if (glres != null) {
+      glres.dispose();
       glVertex = 0;
-    }
-    if (glFragment != 0) {
-      PGraphicsOpenGL.deleteGLSLFragShaderObject(glFragment, context, pgl);
       glFragment = 0;
-    }
-    if (glProgram != 0) {
-      PGraphicsOpenGL.deleteGLSLProgramObject(glProgram, context, pgl);
       glProgram = 0;
+      glres = null;
     }
   }
+
 
   static protected int getShaderType(String[] source, int defaultType) {
     for (int i = 0; i < source.length; i++) {
@@ -1219,6 +1209,7 @@ public class PShader implements PConstants {
     }
   }
 
+
   protected void bindTyped() {
     if (currentPG == null) {
       setRenderer(primaryPG.getCurrentPG());
@@ -1305,7 +1296,7 @@ public class PShader implements PConstants {
     if (-1 < normalLoc) pgl.disableVertexAttribArray(normalLoc);
 
     if (-1 < ppixelsLoc) {
-      pgl.requestFBOLayer();
+      pgl.enableFBOLayer();
       pgl.activeTexture(PGL.TEXTURE0 + ppixelsUnit);
       currentPG.unbindFrontTexture();
       pgl.activeTexture(PGL.TEXTURE0);
@@ -1437,7 +1428,7 @@ public class PShader implements PConstants {
   //
   // Class to store a user-specified value for a uniform parameter
   // in the shader
-  protected class UniformValue {
+  protected static class UniformValue {
     static final int INT1      = 0;
     static final int INT2      = 1;
     static final int INT3      = 2;

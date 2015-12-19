@@ -36,7 +36,6 @@ SOFTWARE.
 
 import java.io.File;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.io.Reader;
 import java.io.StringWriter;
@@ -168,7 +167,7 @@ public class JSONArray {
   public JSONArray(IntList list) {
     myArrayList = new ArrayList<Object>();
     for (int item : list.values()) {
-      myArrayList.add(new Integer(item));
+      myArrayList.add(Integer.valueOf(item));
     }
   }
 
@@ -718,7 +717,7 @@ public class JSONArray {
    * @return this.
    */
   public JSONArray append(int value) {
-    this.append(new Integer(value));
+    this.append(Integer.valueOf(value));
     return this;
   }
 
@@ -731,7 +730,7 @@ public class JSONArray {
    * @return this.
    */
   public JSONArray append(long value) {
-    this.append(new Long(value));
+    this.append(Long.valueOf(value));
     return this;
   }
 
@@ -758,7 +757,7 @@ public class JSONArray {
    * @return this.
    */
   public JSONArray append(double value) {
-    Double d = new Double(value);
+    Double d = value;
     JSONObject.testValidity(d);
     this.append(d);
     return this;
@@ -884,7 +883,7 @@ public class JSONArray {
    * @see JSONArray#setBoolean(int, boolean)
    */
   public JSONArray setInt(int index, int value) {
-    this.set(index, new Integer(value));
+    this.set(index, Integer.valueOf(value));
     return this;
   }
 
@@ -899,7 +898,7 @@ public class JSONArray {
    * @throws JSONException If the index is negative.
    */
   public JSONArray setLong(int index, long value) {
-    return set(index, new Long(value));
+    return set(index, Long.valueOf(value));
   }
 
 
@@ -936,7 +935,7 @@ public class JSONArray {
    * not finite.
    */
   public JSONArray setDouble(int index, double value) {
-    return set(index, new Double(value));
+    return set(index, Double.valueOf(value));
   }
 
 
@@ -1048,6 +1047,7 @@ public class JSONArray {
 
   /**
    * Determine if the value is null.
+   * @webref
    * @param index must be between 0 and length() - 1
    * @return true if the value at the index is null, or if there is no value.
    */
@@ -1094,18 +1094,42 @@ public class JSONArray {
 //  }
 
 
-  protected boolean save(OutputStream output) {
-    return save(PApplet.createWriter(output));
-  }
+//  protected boolean save(OutputStream output) {
+//    return write(PApplet.createWriter(output), null);
+//  }
 
 
   public boolean save(File file, String options) {
-    return save(PApplet.createWriter(file));
+    PrintWriter writer = PApplet.createWriter(file);
+    boolean success = write(writer, options);
+    writer.close();
+    return success;
   }
 
 
-  public boolean save(PrintWriter output) {
-    output.print(format(2));
+  public boolean write(PrintWriter output) {
+    return write(output, null);
+  }
+
+
+  public boolean write(PrintWriter output, String options) {
+    int indentFactor = 2;
+    if (options != null) {
+      String[] opts = PApplet.split(options, ',');
+      for (String opt : opts) {
+        if (opt.equals("compact")) {
+          indentFactor = -1;
+        } else if (opt.startsWith("indent=")) {
+          indentFactor = PApplet.parseInt(opt.substring(7), -2);
+          if (indentFactor == -2) {
+            throw new IllegalArgumentException("Could not read a number from " + opt);
+          }
+        } else {
+          System.err.println("Ignoring " + opt);
+        }
+      }
+    }
+    output.print(format(indentFactor));
     output.flush();
     return true;
   }
@@ -1139,27 +1163,26 @@ public class JSONArray {
   public String format(int indentFactor) {
     StringWriter sw = new StringWriter();
     synchronized (sw.getBuffer()) {
-      return this.write(sw, indentFactor, 0).toString();
+      return this.writeInternal(sw, indentFactor, 0).toString();
     }
   }
 
 
-  /**
-   * Write the contents of the JSONArray as JSON text to a writer. For
-   * compactness, no whitespace is added.
-   * <p>
-   * Warning: This method assumes that the data structure is acyclic.
-   *
-   * @return The writer.
-   */
-  protected Writer write(Writer writer) {
-    return this.write(writer, -1, 0);
-  }
+//  /**
+//   * Write the contents of the JSONArray as JSON text to a writer. For
+//   * compactness, no whitespace is added.
+//   * <p>
+//   * Warning: This method assumes that the data structure is acyclic.
+//   *
+//   * @return The writer.
+//   */
+//  protected Writer write(Writer writer) {
+//    return this.write(writer, -1, 0);
+//  }
 
 
   /**
-   * Write the contents of the JSONArray as JSON text to a writer. For
-   * compactness, no whitespace is added.
+   * Write the contents of the JSONArray as JSON text to a writer.
    * <p>
    * Warning: This method assumes that the data structure is acyclic.
    *
@@ -1171,7 +1194,7 @@ public class JSONArray {
    * @return The writer.
    * @throws JSONException
    */
-  protected Writer write(Writer writer, int indentFactor, int indent) {
+  protected Writer writeInternal(Writer writer, int indentFactor, int indent) {
     try {
       boolean commanate = false;
       int length = this.size();
@@ -1224,7 +1247,7 @@ public class JSONArray {
    */
   public String join(String separator) {
     int len = this.size();
-    StringBuffer sb = new StringBuffer();
+    StringBuilder sb = new StringBuilder();
 
     for (int i = 0; i < len; i += 1) {
       if (i > 0) {

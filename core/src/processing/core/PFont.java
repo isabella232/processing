@@ -3,7 +3,8 @@
 /*
   Part of the Processing project - http://processing.org
 
-  Copyright (c) 2004-10 Ben Fry & Casey Reas
+  Copyright (c) 2012-15 The Processing Foundation
+  Copyright (c) 2004-12 Ben Fry & Casey Reas
   Copyright (c) 2001-04 Massachusetts Institute of Technology
 
   This library is free software; you can redistribute it and/or
@@ -56,8 +57,8 @@ import java.util.HashMap;
  * </PRE>
  * @webref typography
  * @see PApplet#loadFont(String)
+ * @see PApplet#createFont(String, float, boolean, char[])
  * @see PGraphics#textFont(PFont)
- * @see PGraphics#text(char, float, float)
  */
 public class PFont implements PConstants {
 
@@ -85,6 +86,9 @@ public class PFont implements PConstants {
    * The original size of the font when it was first created
    */
   protected int size;
+
+  /** Default density set to 1 for backwards compatibility with loadFont(). */
+  protected int density = 1;
 
   /** true if smoothing was enabled for this font, used for native impl */
   protected boolean smooth;
@@ -124,11 +128,10 @@ public class PFont implements PConstants {
   protected Font font;
 
   /**
-   * True if this font was loaded from a stream, rather than from the OS.
-   * It's always safe to use the native version of a font loaded from a TTF
-   * file, since that's how it'll look when exported. Otherwise, you'll have
-   * to use hint(ENABLE_NATIVE_FONTS) to get the native version working with
-   * renderers that support it.
+   * True if this font was loaded from an InputStream, rather than by name
+   * from the OS. It's best to use the native version of a font loaded from
+   * a TTF file, since that will ensure that the font is available when the
+   * sketch is exported.
    */
   protected boolean stream;
 
@@ -165,7 +168,9 @@ public class PFont implements PConstants {
   /** for subclasses that need to store metadata about the font */
 //  protected HashMap<PGraphics, Object> cacheMap;
 
-
+  /**
+   * @nowebref
+   */
   public PFont() { }  // for subclasses
 
 
@@ -186,7 +191,7 @@ public class PFont implements PConstants {
    *
    * ( end auto-generated )
    *
-   * @webref typography:pfont
+   * @nowebref
    * @param font font the font object to create from
    * @param smooth smooth true to enable smoothing/anti-aliasing
    */
@@ -199,6 +204,7 @@ public class PFont implements PConstants {
    * Create a new image-based font on the fly. If charset is set to null,
    * the characters will only be created as bitmaps when they're drawn.
    *
+   * @nowebref
    * @param charset array of all unicode chars that should be included
    */
   public PFont(Font font, boolean smooth, char charset[]) {
@@ -323,15 +329,20 @@ public class PFont implements PConstants {
   /**
    * Adds an additional parameter that indicates the font came from a file,
    * not a built-in OS font.
+   *
+   * @nowebref
    */
-  public PFont(Font font, boolean smooth, char charset[], boolean stream) {
+  public PFont(Font font, boolean smooth, char charset[],
+               boolean stream, int density) {
     this(font, smooth, charset);
     this.stream = stream;
+    this.density = density;
   }
 
-/**
- * @param input InputStream
- */
+  /**
+   * @nowebref
+   * @param input InputStream
+   */
   public PFont(InputStream input) throws IOException {
     DataInputStream is = new DataInputStream(input);
 
@@ -527,6 +538,29 @@ public class PFont implements PConstants {
    */
   public int getSize() {
     return size;
+  }
+
+
+//  public void setDefaultSize(int size) {
+//    defaultSize = size;
+//  }
+
+
+  /**
+   * Returns the size that will be used when textFont(font) is called.
+   * When drawing with 2x pixel density, bitmap fonts in OpenGL need to be
+   * created (behind the scenes) at double the requested size. This ensures
+   * that they're shown at half on displays (so folks don't have to change
+   * their sketch code).
+   */
+  public int getDefaultSize() {
+    //return defaultSize;
+    return size / density;
+  }
+
+
+  public boolean isSmooth() {
+    return smooth;
   }
 
 

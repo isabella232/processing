@@ -3,7 +3,8 @@ package processing.core;
 import java.io.BufferedReader;
 import java.io.File;
 import java.util.ArrayList;
-import java.util.Hashtable;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * This class is not part of the Processing API and should not be used
@@ -159,7 +160,7 @@ public class PShapeOBJ extends PShape {
                                  ArrayList<PVector> coords,
                                  ArrayList<PVector> normals,
                                  ArrayList<PVector> texcoords) {
-    Hashtable<String, Integer> mtlTable  = new Hashtable<String, Integer>();
+    Map<String, Integer> mtlTable  = new HashMap<String, Integer>();
     int mtlIdxCur = -1;
     boolean readv, readvn, readvt;
     try {
@@ -231,6 +232,7 @@ public class PShapeOBJ extends PShape {
               BufferedReader mreader = parent.createReader(fn);
               if (mreader != null) {
                 parseMTL(parent, path, mreader, materials, mtlTable);
+                mreader.close();
               }
             }
           } else if (parts[0].equals("g")) {
@@ -321,7 +323,7 @@ public class PShapeOBJ extends PShape {
   static protected void parseMTL(PApplet parent, String path,
                                  BufferedReader reader,
                                  ArrayList<OBJMaterial> materials,
-                                 Hashtable<String, Integer> materialsHash) {
+                                 Map<String, Integer> materialsHash) {
     try {
       String line;
       OBJMaterial currentMtl = null;
@@ -335,7 +337,7 @@ public class PShapeOBJ extends PShape {
             // Starting new material.
             String mtlname = parts[1];
             currentMtl = new OBJMaterial(mtlname);
-            materialsHash.put(mtlname, new Integer(materials.size()));
+            materialsHash.put(mtlname, Integer.valueOf(materials.size()));
             materials.add(currentMtl);
           } else if (parts[0].equals("map_Kd") && parts.length > 1) {
             // Loading texture map.
