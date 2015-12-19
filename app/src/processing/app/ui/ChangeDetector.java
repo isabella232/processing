@@ -79,11 +79,12 @@ public class ChangeDetector implements WindowFocusListener {
   private boolean checkFileCount() {
     // check file count first
 
-    List<String> filenames = new ArrayList<>();
+    //List<String> filenames = new ArrayList<>();
 
-    sketch.getSketchCodeFiles(filenames, null);
+    ArrayList<File> files = sketch.getSketchCodeFiles();
 
-    int fileCount = filenames.size();
+    //int fileCount = filenames.size();
+    int fileCount = files.size();
 
     // Was considering keeping track of the last "known" number of files
     // (instead of using sketch.getCodeCount() here) in case the user

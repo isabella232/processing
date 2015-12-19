@@ -12578,7 +12578,7 @@ public class PApplet implements PConstants {
    * ignored.
    *
    * @param x1 by default, the x-coordinate of text, see rectMode() for more info
-   * @param y1 by default, the x-coordinate of text, see rectMode() for more info
+   * @param y1 by default, the y-coordinate of text, see rectMode() for more info
    * @param x2 by default, the width of the text box, see rectMode() for more info
    * @param y2 by default, the height of the text box, see rectMode() for more info
    */
