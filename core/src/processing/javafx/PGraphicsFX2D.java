@@ -50,6 +50,8 @@ import javafx.scene.text.Text;
 import javafx.scene.transform.Affine;
 import javafx.scene.transform.Transform;
 
+import java.awt.BasicStroke;
+
 import processing.core.*;
 
 
@@ -1875,6 +1877,17 @@ public class PGraphicsFX2D extends PGraphics {
   // STROKE CAP/JOIN/WEIGHT
 
 
+  public void strokeDash(double width, double offset) {
+    double[] dashes = { width };
+    context.setLineDashOffset(offset);
+    context.setLineDashes(dashes);
+  }
+
+  public void noDash() {
+    context.setLineDashOffset(0.0);
+    context.setLineDashes(null);
+  }
+
   @Override
   public void strokeCap(int cap) {
     super.strokeCap(cap);
@@ -1914,7 +1927,6 @@ public class PGraphicsFX2D extends PGraphics {
   // STROKE
 
   // noStroke() and stroke() inherited from PGraphics.
-
 
   @Override
   protected void strokeFromCalc() {
